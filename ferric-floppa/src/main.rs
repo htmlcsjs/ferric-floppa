@@ -11,7 +11,8 @@ use serenity::{
     Client,
 };
 use tokio::fs;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, Level};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> FlopResult<()> {
@@ -19,9 +20,25 @@ async fn main() -> FlopResult<()> {
     let mut token = fs::read_to_string(args.run.join("token")).await?;
     token.retain(|c| !c.is_whitespace());
 
+    let other_crates_level = match args.log_level {
+        Level::ERROR => Level::ERROR,
+        Level::WARN => Level::WARN,
+        Level::INFO => Level::WARN,
+        Level::DEBUG => Level::INFO,
+        Level::TRACE => Level::TRACE,
+    };
+
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(other_crates_level.into())
+        .parse(
+            other_crates_level.to_string()
+                + concat!(",", env!("CARGO_CRATE_NAME"), "=")
+                + &args.log_level.to_string(),
+        )?;
+
     tracing_subscriber::fmt()
-        .with_max_level(args.log_level)
         .pretty()
+        .with_env_filter(env_filter)
         .try_init()?;
 
     let mut client = Client::builder(token, get_intents())
@@ -49,6 +66,9 @@ impl EventHandler for Handler {
 
     #[instrument(skip_all)]
     async fn ready(&self, _ctx: Context, ready: Ready) {
-        info!("{} is connected!", ready.user.name);
+        info!(
+            "Logged in as {}#{:04}",
+            ready.user.name, ready.user.discriminator
+        );
     }
 }
