@@ -12,3 +12,6 @@ tokio = { version = "1.25.0", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4.1.4", features = [ "derive" ] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"]}
+itertools = "0.10.5"
+serde = "1.0"
+toml = "0.7.2"
