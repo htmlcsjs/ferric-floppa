@@ -10,12 +10,13 @@ Download the executible and run it. ~~It has a first time setup console~~ TODO
 - [x] Config backend
 - [x] Reactions
 - [ ] First time setup support
-- [ ] Command trait
+- [x] Command trait
 - [ ] Message editing/deletion support
 - [ ] User facing scripts (like leveret tags)
     - [ ] Sandboxed code execution enviroment
 - [ ] Port the commands from CoffeeFloppa
-    - [ ] Custom
+    - [x] Custom
+        - [ ] Nice to have a --all function
     - [ ] FlopCount
     - [ ] GithubIssue
     - [ ] Help

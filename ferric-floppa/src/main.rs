@@ -1,13 +1,15 @@
 mod args;
 mod cfg;
+mod command;
 mod consts;
 mod handler;
 
 use crate::consts::*;
 use args::FlopArgs;
-use cfg::Config;
+use cfg::FlopConfig;
 use clap::Parser;
-use itertools::Itertools;
+use command::TextCommand;
+use handler::Handler;
 use serenity::Client;
 use tokio::fs;
 use tracing::Level;
@@ -16,7 +18,7 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> FlopResult<()> {
     let args = FlopArgs::parse();
-    let cfg: Config = toml::from_str(&fs::read_to_string(args.run.join("config.toml")).await?)?;
+    let cfg: FlopConfig = toml::from_str(&fs::read_to_string(args.run.join("config.toml")).await?)?;
     let mut token = fs::read_to_string(args.run.join("token")).await?;
     token.retain(|c| !c.is_whitespace());
 
@@ -41,8 +43,17 @@ async fn main() -> FlopResult<()> {
         .with_env_filter(env_filter)
         .try_init()?;
 
+    let mut handler = Handler::init(cfg);
+
+    handler
+        .add_cmd(
+            "halp".to_owned(),
+            TextCommand::new(vec!["Bot is kil".to_owned()]),
+        )
+        .await;
+
     let mut client = Client::builder(token, get_intents())
-        .event_handler(Handler::init(cfg))
+        .event_handler(handler)
         .await?;
 
     client.start().await?;
