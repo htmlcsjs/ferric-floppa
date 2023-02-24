@@ -3,12 +3,13 @@ mod cfg;
 mod command;
 mod consts;
 mod handler;
+mod util;
 
 use crate::consts::*;
 use args::FlopArgs;
 use cfg::FlopConfig;
 use clap::Parser;
-use command::TextCommand;
+use command::{SleepCmd, TextCmd};
 use handler::Handler;
 use serenity::Client;
 use tokio::fs;
@@ -38,19 +39,21 @@ async fn main() -> FlopResult<()> {
                 + &args.log_level.to_string(),
         )?;
 
-    tracing_subscriber::fmt()
-        .pretty()
-        .with_env_filter(env_filter)
-        .try_init()?;
+    let fmt = tracing_subscriber::fmt().with_env_filter(env_filter);
+    #[cfg(debug_assertions)]
+    fmt.pretty().try_init()?;
+    #[cfg(not(debug_assertions))]
+    fmt.try_init()?;
 
     let mut handler = Handler::init(cfg);
 
     handler
         .add_cmd(
             "halp".to_owned(),
-            TextCommand::new(vec!["Bot is kil".to_owned()]),
+            TextCmd::new(vec!["Bot is kil".to_owned()]),
         )
         .await;
+    handler.add_cmd("sleep".to_owned(), SleepCmd).await;
 
     let mut client = Client::builder(token, get_intents())
         .event_handler(handler)

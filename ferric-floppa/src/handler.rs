@@ -3,7 +3,6 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use itertools::Itertools;
 use serenity::{
     async_trait,
-    builder::ParseValue,
     model::prelude::{Message, ReactionType, Ready},
     prelude::*,
 };
@@ -36,6 +35,11 @@ impl Handler {
             command_map: RwLock::new(HashMap::new()),
         }
     }
+    pub async fn add_cmd(&mut self, name: String, cmd: impl FlopCommand + 'static) {
+        let mut r = self.command_map.write().await;
+
+        r.insert(name, Arc::new(cmd));
+    }
 }
 
 #[async_trait]
@@ -58,26 +62,11 @@ impl EventHandler for Handler {
         if !msg.author.bot && msg.content.chars().next().unwrap_or(' ') == self.cfg.prefix {
             let map_handle = self.command_map.read().await;
 
-            if let Some(cmd) =
-                map_handle.get(&msg.content.split(' ').next().unwrap_or_default()[1..])
+            if let Some(cmd) = map_handle
+                .get(&msg.content.split(' ').next().unwrap_or_default()[1..].to_lowercase())
             {
-                let link = msg.link();
-
                 // TODO Error handling logging to discord
-                if let Err(e) = msg
-                    .channel_id
-                    .send_message(&ctx.http, |m| {
-                        m.reference_message(&msg)
-                            .allowed_mentions(|am| am.parse(ParseValue::Users));
-                        if let Err(e) = cmd.execute(self, msg, m) {
-                            error!("Error executing command `{link:}`: {e:}")
-                        };
-                        m
-                    })
-                    .await
-                {
-                    error!("Error sending message `{link:}`: {e:}")
-                }
+                cmd.execute(self, msg, &ctx).await;
             }
         }
     }
@@ -101,6 +90,8 @@ impl DataHolder for Handler {
     async fn get_cfg(&self) -> FlopConfig {
         self.cfg.clone()
     }
+
+    // TODO sync to FS
     async fn set_cfg(&mut self, new_cfg: FlopConfig) {
         self.cfg = new_cfg;
         self.cache_emoji = ReactionType::Custom {
@@ -108,13 +99,5 @@ impl DataHolder for Handler {
             id: self.cfg.emote.id.into(),
             name: Some(self.cfg.emote.name.clone()),
         };
-    }
-}
-
-impl Handler {
-    pub async fn add_cmd(&mut self, name: String, cmd: impl FlopCommand + 'static) {
-        let mut r = self.command_map.write().await;
-
-        r.insert(name, Arc::new(cmd));
     }
 }

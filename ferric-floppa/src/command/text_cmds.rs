@@ -1,33 +1,41 @@
-use serenity::{builder::CreateMessage, model::prelude::Message};
+use std::time::Duration;
 
-use crate::consts::FlopResult;
+use serenity::{async_trait, model::prelude::Message, prelude::Context};
 
 use rand::prelude::SliceRandom;
+
+use crate::{send_reply_text, util::send_msg};
 
 use super::{DataHolder, FlopCommand};
 
 const NO_CONTENT: &str = "⚠️ This command has no responses";
 
 #[derive(Debug)]
-pub struct TextCommand {
+pub struct TextCmd {
     responses: Vec<String>,
 }
 
-impl TextCommand {
+impl TextCmd {
     pub fn new(responses: Vec<String>) -> Self {
         Self { responses }
     }
 }
 
-impl FlopCommand for TextCommand {
-    fn execute(
-        &self,
-        _data: &dyn DataHolder,
-        _msg: Message,
-        m: &mut CreateMessage,
-    ) -> FlopResult<()> {
+#[async_trait]
+impl FlopCommand for TextCmd {
+    async fn execute(&self, _data: &dyn DataHolder, msg: Message, ctx: &Context) {
         let result: Option<&String> = self.responses.choose(&mut rand::thread_rng());
-        m.content(result.unwrap_or(&NO_CONTENT.to_string()));
-        Ok(())
+        send_reply_text!(result.unwrap_or(&NO_CONTENT.to_string()), ctx, msg)
+    }
+}
+
+#[derive(Debug)]
+pub struct SleepCmd;
+
+#[async_trait]
+impl FlopCommand for SleepCmd {
+    async fn execute(&self, _data: &dyn DataHolder, msg: Message, ctx: &Context) {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        send_reply_text!("Epic sleep", ctx, msg)
     }
 }

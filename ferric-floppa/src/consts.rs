@@ -8,6 +8,7 @@ use serenity::prelude::GatewayIntents;
 
 pub type FlopResult<T> = Result<T, Box<dyn Error + Send + Sync + 'static>>;
 
+#[inline]
 pub fn get_intents() -> GatewayIntents {
     GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
