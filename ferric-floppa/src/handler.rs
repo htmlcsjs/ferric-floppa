@@ -3,42 +3,49 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use itertools::Itertools;
 use serenity::{
     async_trait,
-    model::prelude::{Message, ReactionType, Ready},
+    model::prelude::{EmojiId, Message, MessageUpdateEvent, Ready},
     prelude::*,
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
-use crate::{
-    cfg::FlopConfig,
-    command::{DataHolder, FlopCommand},
-};
+use crate::{cfg::FlopConfig, command::FlopCommand, util::error::report_error};
 
+// maybe want to put data into ctx?
 #[derive(Debug)]
 pub struct Handler {
-    cfg: FlopConfig,
-    cache_emoji: ReactionType,
+    cache: Option<HandlerCache>,
     // TODO: Use something less fucked
     command_map: RwLock<HashMap<String, Arc<dyn FlopCommand>>>,
 }
 
 impl Handler {
-    pub fn init(cfg: FlopConfig) -> Self {
-        let cache_emoji = ReactionType::Custom {
-            animated: cfg.emote.animated,
-            id: cfg.emote.id.into(),
-            name: Some(cfg.emote.name.clone()),
-        };
-
+    pub fn new() -> Self {
         Self {
-            cfg,
-            cache_emoji,
+            cache: None,
             command_map: RwLock::new(HashMap::new()),
         }
     }
-    pub async fn add_cmd(&mut self, name: String, cmd: impl FlopCommand + 'static) {
-        let mut r = self.command_map.write().await;
 
-        r.insert(name, Arc::new(cmd));
+    pub async fn add_cmd(&mut self, name: String, cmd: impl FlopCommand + 'static) {
+        let mut map = self.command_map.write().await;
+        map.insert(name, Arc::new(cmd));
+    }
+
+    pub async fn update_cache(&mut self, ctx: &Context) {
+        #[allow(clippy::let_and_return)] // Otherwise data_r wouldn't live long enough
+        let cfg = {
+            let data_r = ctx.data.read().await;
+            let cfg_lock = data_r.get::<DataHolderKey>().expect("Expected Dataholder");
+            let cfg = cfg_lock.read().await.get_cfg();
+            cfg
+        };
+        self.cache = Some(HandlerCache {
+            emoji: EmojiId::from(cfg.emote.id),
+
+            phrase: cfg.emote.phrase,
+            prefix: cfg.prefix,
+        });
+        ctx.cache.set_max_messages(cfg.message_cache_size);
     }
 }
 
@@ -46,27 +53,34 @@ impl Handler {
 impl EventHandler for Handler {
     #[instrument(skip_all)]
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg
-            .content
-            .chars()
-            .dedup()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>()
-            .contains(&self.cfg.emote.phrase)
-        {
-            if let Err(e) = msg.react(&ctx.http, self.cache_emoji.clone()).await {
-                error!("Error adding reaction: {e:?}");
-            }
-        }
-
-        if !msg.author.bot && msg.content.chars().next().unwrap_or(' ') == self.cfg.prefix {
-            let map_handle = self.command_map.read().await;
-
-            if let Some(cmd) = map_handle
-                .get(&msg.content.split(' ').next().unwrap_or_default()[1..].to_lowercase())
+        // might want to cahce stuff
+        // TODO: Split this off into a seperate function, for code cleniness
+        if let Some(cache) = &self.cache {
+            if msg
+                .content
+                .chars()
+                .dedup()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .contains(&cache.phrase)
             {
-                // TODO Error handling logging to discord
-                cmd.execute(self, msg, &ctx).await;
+                if let Err(e) = msg.react(&ctx.http, cache.emoji).await {
+                    error!("Error adding reaction: {e:?}");
+                }
+            }
+
+            if !msg.author.bot && msg.content.chars().next().unwrap_or(' ') == cache.prefix {
+                let map_handle = self.command_map.read().await.clone();
+                let name = msg.content.split(' ').next().unwrap_or_default()[1..].to_lowercase();
+
+                if let Some(cmd) = map_handle.get(&name) {
+                    let typing = msg.channel_id.start_typing(&ctx.http);
+                    cmd.execute(msg, &ctx).await;
+                    match typing {
+                        Ok(ty) => ty.stop().unwrap(),
+                        Err(e) => report_error(Box::new(e), "Error creating typing callback"),
+                    }
+                }
             }
         }
     }
@@ -78,26 +92,53 @@ impl EventHandler for Handler {
             ready.user.name, ready.user.discriminator
         );
     }
-    //
-    // #[instrument(skip_all)]
-    // async fn message_update(&self, ctx: Context, msg_update: MessageUpdateEvent) {
-    //
-    // }
+
+    #[instrument(skip_all)]
+    async fn message_update(
+        &self,
+        ctx: Context,
+        _old: Option<Message>,
+        new: Option<Message>,
+        event: MessageUpdateEvent,
+    ) {
+        // TODO compare old message content and new message content and react apporiatly
+        if let Some(msg) = new {
+            self.message(ctx, msg).await
+        } else {
+            warn!("Could not get the new message object for {:?}", event)
+        }
+    }
 }
 
-#[async_trait]
-impl DataHolder for Handler {
-    async fn get_cfg(&self) -> FlopConfig {
+#[derive(Debug)]
+pub struct DataHolder {
+    cfg: FlopConfig,
+}
+
+impl DataHolder {
+    pub fn get_cfg(&self) -> FlopConfig {
         self.cfg.clone()
     }
 
     // TODO sync to FS
-    async fn set_cfg(&mut self, new_cfg: FlopConfig) {
+    pub async fn set_cfg(&mut self, new_cfg: FlopConfig) {
         self.cfg = new_cfg;
-        self.cache_emoji = ReactionType::Custom {
-            animated: self.cfg.emote.animated,
-            id: self.cfg.emote.id.into(),
-            name: Some(self.cfg.emote.name.clone()),
-        };
     }
+
+    pub fn new(cfg: FlopConfig) -> Self {
+        Self { cfg }
+    }
+}
+
+pub struct DataHolderKey;
+
+impl TypeMapKey for DataHolderKey {
+    type Value = Arc<RwLock<DataHolder>>;
+}
+
+#[derive(Debug)]
+struct HandlerCache {
+    emoji: EmojiId,
+    phrase: String,
+    prefix: char,
 }

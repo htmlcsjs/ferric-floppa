@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use serenity::{
     builder::{CreateMessage, ParseValue},
     http::Http,
-    model::prelude::{AttachmentType, ChannelId, MessageReference},
+    model::prelude::{AttachmentType, ChannelId, Message, MessageReference},
 };
 
 use crate::consts::FlopResult;
@@ -13,7 +13,7 @@ pub async fn send_text(
     channel: &ChannelId,
     text: impl ToString,
     reference: Option<impl Into<MessageReference>>,
-) -> FlopResult<()> {
+) -> FlopResult<Message> {
     let text = text.to_string();
     if text.len() <= 2000 {
         send_flop_message(
@@ -24,7 +24,7 @@ pub async fn send_text(
             },
             reference,
         )
-        .await?;
+        .await
     } else {
         send_flop_message(
             http,
@@ -37,10 +37,8 @@ pub async fn send_text(
             },
             reference,
         )
-        .await?;
+        .await
     }
-
-    Ok(())
 }
 
 pub async fn send_flop_message<'a, F>(
@@ -48,11 +46,11 @@ pub async fn send_flop_message<'a, F>(
     channel: &ChannelId,
     f: F,
     reference: Option<impl Into<MessageReference>>,
-) -> FlopResult<()>
+) -> FlopResult<Message>
 where
     for<'b> F: FnOnce(&'b mut CreateMessage<'a>),
 {
-    channel
+    Ok(channel
         .send_message(http, |m| {
             f(m);
             m.allowed_mentions(|am| am.parse(ParseValue::Users));
@@ -61,17 +59,20 @@ where
             }
             m
         })
-        .await?;
-    Ok(())
+        .await?)
 }
 
 #[macro_export]
 macro_rules! send_reply_text {
     ($str:expr, $ctx:ident, $msg:ident) => {
-        $crate::handle_error!(
-            send_msg::send_text(&$ctx.http, &$msg.channel_id, $str, Some(&$msg)).await,
-            "Error sending message",
-            $msg
-        )
+        $crate::util::send_msg::send_text(&$ctx.http, &$msg.channel_id, $str, Some(&$msg))
+            .await
+            .map_err(|e| {
+                $crate::util::error::report_error(
+                    e,
+                    &format!("Error sending message `{}` ", $msg.link()),
+                );
+            })
+            .ok()
     };
 }

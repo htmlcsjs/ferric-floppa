@@ -1,3 +1,5 @@
+#![feature(trait_alias)]
+
 mod args;
 mod cfg;
 mod command;
@@ -5,13 +7,15 @@ mod consts;
 mod handler;
 mod util;
 
+use std::sync::Arc;
+
 use crate::consts::*;
 use args::FlopArgs;
 use cfg::FlopConfig;
 use clap::Parser;
 use command::{SleepCmd, TextCmd};
-use handler::Handler;
-use serenity::Client;
+use handler::{DataHolder, DataHolderKey, Handler};
+use serenity::{prelude::RwLock, Client};
 use tokio::fs;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
@@ -39,13 +43,14 @@ async fn main() -> FlopResult<()> {
                 + &args.log_level.to_string(),
         )?;
 
+    // TODO: Custom sub that reports to discord
     let fmt = tracing_subscriber::fmt().with_env_filter(env_filter);
     #[cfg(debug_assertions)]
     fmt.pretty().try_init()?;
     #[cfg(not(debug_assertions))]
     fmt.try_init()?;
 
-    let mut handler = Handler::init(cfg);
+    let mut handler = Handler::new();
 
     handler
         .add_cmd(
@@ -58,6 +63,10 @@ async fn main() -> FlopResult<()> {
     let mut client = Client::builder(token, get_intents())
         .event_handler(handler)
         .await?;
+    {
+        let mut data_write = client.data.write().await;
+        data_write.insert::<DataHolderKey>(Arc::new(RwLock::new(DataHolder::new(cfg))));
+    }
 
     client.start().await?;
 

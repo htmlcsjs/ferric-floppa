@@ -6,7 +6,8 @@ use serenity::prelude::GatewayIntents;
 ///
 /// Nothing dynamic in here please
 
-pub type FlopResult<T> = Result<T, Box<dyn Error + Send + Sync + 'static>>;
+pub trait FlopError = Error + Send + Sync;
+pub type FlopResult<T> = Result<T, Box<dyn FlopError>>;
 
 #[inline]
 pub fn get_intents() -> GatewayIntents {
