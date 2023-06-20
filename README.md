@@ -7,16 +7,17 @@ Download the executible and run it. ~~It has a first time setup console~~ TODO
 
 ## TODO
 
-- [x] Config backend
-- [x] Reactions
+- [ ] Config backend
+- [ ] Reactions
 - [ ] First time setup support
-- [x] Command trait
+- [ ] Command trait
 - [ ] Message editing/deletion support
+- [ ] Configurable permissions
 - [ ] Logging to a discord channel on error or when a moderator power is used
 - [ ] User facing scripts (like leveret tags)
     - [ ] Sandboxed code execution enviroment
 - [ ] Port the commands from CoffeeFloppa
-    - [x] Custom
+    - [ ] Custom
         - [ ] Nice to have a --all function
     - [ ] FlopCount
     - [ ] GithubIssue

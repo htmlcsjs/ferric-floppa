@@ -1,74 +1,69 @@
 #![feature(trait_alias)]
+use std::{error::Error, sync::Arc};
 
-mod args;
-mod cfg;
-mod command;
-mod consts;
-mod handler;
-mod util;
-
-use std::sync::Arc;
-
-use crate::consts::*;
-use args::FlopArgs;
-use cfg::FlopConfig;
-use clap::Parser;
-use command::{SleepCmd, TextCmd};
-use handler::{DataHolder, DataHolderKey, Handler};
-use serenity::{prelude::RwLock, Client};
 use tokio::fs;
-use tracing::Level;
-use tracing_subscriber::EnvFilter;
+use twilight_cache_inmemory::{InMemoryCache, ResourceType};
+use twilight_gateway::{Event, Shard, ShardId};
+use twilight_http::Client as HttpClient;
+use twilight_model::gateway::Intents;
 
 #[tokio::main]
-async fn main() -> FlopResult<()> {
-    let args = FlopArgs::parse();
-    let cfg: FlopConfig = toml::from_str(&fs::read_to_string(args.run.join("config.toml")).await?)?;
-    let mut token = fs::read_to_string(args.run.join("token")).await?;
-    token.retain(|c| !c.is_whitespace());
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    let temp_token = fs::read_to_string("token").await?;
+    let token = temp_token.trim().to_string();
 
-    let other_crates_level = match args.log_level {
-        Level::ERROR => Level::ERROR,
-        Level::WARN => Level::WARN,
-        Level::INFO => Level::WARN,
-        Level::DEBUG => Level::INFO,
-        Level::TRACE => Level::TRACE,
-    };
+    let mut shard = Shard::new(
+        ShardId::ONE,
+        token.clone(),
+        Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
+    );
 
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(other_crates_level.into())
-        .parse(
-            other_crates_level.to_string()
-                + concat!(",", env!("CARGO_CRATE_NAME"), "=")
-                + &args.log_level.to_string(),
-        )?;
+    let http = Arc::new(HttpClient::new(token));
 
-    // TODO: Custom sub that reports to discord
-    let fmt = tracing_subscriber::fmt().with_env_filter(env_filter);
-    #[cfg(debug_assertions)]
-    fmt.pretty().try_init()?;
-    #[cfg(not(debug_assertions))]
-    fmt.try_init()?;
+    let cache = InMemoryCache::builder()
+        .resource_types(ResourceType::MESSAGE)
+        .build();
 
-    let mut handler = Handler::new();
+    loop {
+        let event = match shard.next_event().await {
+            Ok(event) => event,
+            Err(source) => {
+                tracing::warn!(?source, "error receiving event");
 
-    handler
-        .add_cmd(
-            "halp".to_owned(),
-            TextCmd::new(vec!["Bot is kil".to_owned()]),
-        )
-        .await;
-    handler.add_cmd("sleep".to_owned(), SleepCmd).await;
+                if source.is_fatal() {
+                    break;
+                }
 
-    let mut client = Client::builder(token, get_intents())
-        .event_handler(handler)
-        .await?;
-    {
-        let mut data_write = client.data.write().await;
-        data_write.insert::<DataHolderKey>(Arc::new(RwLock::new(DataHolder::new(cfg))));
+                continue;
+            }
+        };
+
+        cache.update(&event);
+
+        tokio::spawn(handle_event(event, Arc::clone(&http)));
     }
 
-    client.start().await?;
+    Ok(())
+}
+
+async fn handle_event(
+    event: Event,
+    http: Arc<HttpClient>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    match event {
+        Event::MessageCreate(msg) if msg.content == "$ping" => {
+            http.create_message(msg.channel_id)
+                .reply(msg.id)
+                .content(":flop:")?
+                .await?;
+        }
+        // Other events here...
+        Event::Ready(ready) => {
+            tracing::info!("Logged in as {}", ready.user.name);
+        }
+        _ => (),
+    }
 
     Ok(())
 }
