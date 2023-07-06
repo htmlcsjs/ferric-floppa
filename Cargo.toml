@@ -1,2 +1,4 @@
+
 [workspace]
-members = ["ferric-floppa"] 
+members = ["ferric-floppa"]
+resolver = "2"

@@ -70,3 +70,6 @@ flycheck_*.el
 
 # network security
 /network-security.data
+
+# bacon configuration
+bacon.toml
