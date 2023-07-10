@@ -1,5 +1,6 @@
 #![feature(trait_alias)]
 mod config;
+mod log;
 
 use std::{
     error::Error,
@@ -10,7 +11,9 @@ use std::{
 
 use clap::Parser;
 use config::Config;
+use log::FlopLog;
 use tokio::{fs, sync::RwLock};
+use tracing_subscriber::prelude::*;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Event, Shard, ShardId};
 use twilight_http::Client as HttpClient;
@@ -50,16 +53,29 @@ impl Cli {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-    if let Err(e) = run().await {
+    let cli = match Cli::initlise() {
+        Ok(inner) => inner,
+        Err(e) => panic!("Fatal error loading cli args:\n{e}"),
+    };
+
+    let cfg = match Config::load_from_fs(&cli) {
+        Ok(inner) => inner,
+        Err(e) => panic!("Fatal error during initall config loading:\n{e}"),
+    };
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(FlopLog::new(&cfg))
+        .init();
+
+    if let Err(e) = run(cli, cfg).await {
         tracing::error!("Fatal error encountered: {e}")
     }
 }
 
-async fn run() -> anyhow::Result<()> {
-    let cli = Cli::initlise()?;
+async fn run(cli: Cli, cfg: Config) -> anyhow::Result<()> {
     // TODO: Have a default for this
-    let cfg = Arc::new(RwLock::new(Config::load_from_fs(&cli)?));
+    let cfg = Arc::new(RwLock::new(cfg));
 
     let temp_token = fs::read_to_string(cli.get_path("token")).await?;
     let token = temp_token.trim().to_string();

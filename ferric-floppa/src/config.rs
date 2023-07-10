@@ -5,6 +5,7 @@ use crate::Cli;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub prefix: String,
+    pub logging: LoggingConfig,
 }
 
 impl Config {
@@ -23,4 +24,11 @@ impl Config {
 
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    pub webhook_url: String,
+    pub global_level: String,
+    pub webhook_level: String,
 }
