@@ -1,4 +1,3 @@
-#![feature(trait_alias)]
 mod config;
 mod log;
 
@@ -121,11 +120,11 @@ async fn handle_event(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let prefix = {
         let handle = cfg.read().await;
-        handle.prefix.clone()
+        handle.prefix.to_string()
     };
 
     match event {
-        Event::MessageCreate(msg) if msg.content == prefix + "ping" => {
+        Event::MessageCreate(msg) if msg.content.starts_with(&prefix) => {
             http.create_message(msg.channel_id)
                 .reply(msg.id)
                 .content(":flop:")?

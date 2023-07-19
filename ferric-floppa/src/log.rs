@@ -66,10 +66,7 @@ where
         let mut embed_builder = EmbedBuilder::new()
             .description(description)
             .title(title)
-            .field(
-                EmbedFieldBuilder::new("Level", format!("`{}`", metadata.level().to_string()))
-                    .inline(),
-            )
+            .field(EmbedFieldBuilder::new("Level", format!("`{}`", metadata.level())).inline())
             .field(EmbedFieldBuilder::new(
                 "Name",
                 format!("`{}`", metadata.name()),
