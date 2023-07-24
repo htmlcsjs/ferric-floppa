@@ -1,23 +1,19 @@
 [package]
-name = "ferric-floppa"
+name = "libfloppa"
 version = "0.0.0"
 edition = "2021"
-default-run = "ferric-floppa"
-authors = ["htmlcsjs"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 tokio = { version = "1.29", features = ["macros", "rt-multi-thread", "fs"] }
 clap = { version = "4.3", features = ["derive"] }
-twilight-cache-inmemory = "0.15"
+futures = "0.3"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
 twilight-model = "0.15"
 color-eyre = "0.6"
-tracing-subscriber = "0.3"
 tracing = "0.1"
 serde = "1.0"
-ureq = { version = "2.7", features = ["json"]}
+serde_yaml = "0.9"
 twilight-util = { version = "0.15", features = ["builder"] }
-libfloppa = { path = "../libfloppa/"}

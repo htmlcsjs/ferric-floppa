@@ -1,4 +1,4 @@
 
 [workspace]
-members = ["ferric-floppa"]
+members = ["ferric-floppa", "libfloppa"]
 resolver = "2"

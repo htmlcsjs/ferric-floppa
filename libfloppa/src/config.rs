@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::Cli;
+use crate::{Cli, FlopResult};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -9,13 +9,13 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load_from_fs(cli: &Cli) -> anyhow::Result<Self> {
+    pub fn load_from_fs(cli: &Cli) -> FlopResult<Self> {
         Ok(serde_yaml::from_reader(std::fs::File::open(
             cli.run_dir.join("config.yaml"),
         )?)?)
     }
 
-    pub async fn write_to_fs(&self, cli: &Cli) -> anyhow::Result<()> {
+    pub async fn write_to_fs(&self, cli: &Cli) -> FlopResult<()> {
         tokio::fs::write(
             cli.run_dir.join("config.yaml"),
             serde_yaml::to_string(&self)?,
