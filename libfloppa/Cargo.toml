@@ -17,3 +17,4 @@ tracing = "0.1"
 serde = "1.0"
 serde_yaml = "0.9"
 twilight-util = { version = "0.15", features = ["builder"] }
+async-trait = "0.1"

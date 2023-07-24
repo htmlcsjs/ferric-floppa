@@ -1,3 +1,4 @@
+mod command;
 pub mod config;
 
 use std::{
