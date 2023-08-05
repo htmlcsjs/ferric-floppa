@@ -11,7 +11,10 @@ use std::{
 use clap::Parser;
 pub use color_eyre::Result as FlopResult;
 pub use config::Config;
-use tokio::sync::RwLock;
+use tokio::{
+    sync::RwLock,
+    time::{sleep, Duration},
+};
 use twilight_gateway::Event;
 pub use twilight_http::Client as HttpClient;
 
@@ -48,6 +51,7 @@ impl Cli {
         self.run_dir.join(path)
     }
 }
+
 pub async fn handle_event(
     event: Event,
     http: Arc<HttpClient>,
@@ -60,6 +64,7 @@ pub async fn handle_event(
 
     match event {
         Event::MessageCreate(msg) if msg.content.starts_with(&prefix) => {
+            sleep(Duration::from_millis(5000)).await;
             http.create_message(msg.channel_id)
                 .reply(msg.id)
                 .content(":flop:")?

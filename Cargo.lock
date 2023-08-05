@@ -365,12 +365,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "ferric-floppa"
+name = "flate2"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b9429470923de8e8cbd4d2dc513535400b4b3fef0319fb5c4e1f520a7bef743"
+dependencies = [
+ "crc32fast",
+ "libz-sys",
+ "miniz_oxide",
+]
+
+[[package]]
+name = "floppa"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "clap",
+ "color-eyre",
+ "futures",
+ "serde",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+ "twilight-gateway",
+ "twilight-http",
+ "twilight-model",
+ "twilight-util",
+]
+
+[[package]]
+name = "floppa-runner"
 version = "0.0.0"
 dependencies = [
  "clap",
  "color-eyre",
- "libfloppa",
+ "floppa",
  "serde",
  "tokio",
  "tracing",
@@ -381,17 +410,6 @@ dependencies = [
  "twilight-model",
  "twilight-util",
  "ureq",
-]
-
-[[package]]
-name = "flate2"
-version = "1.0.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b9429470923de8e8cbd4d2dc513535400b4b3fef0319fb5c4e1f520a7bef743"
-dependencies = [
- "crc32fast",
- "libz-sys",
- "miniz_oxide",
 ]
 
 [[package]]
@@ -718,24 +736,6 @@ name = "libc"
 version = "0.2.146"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
-
-[[package]]
-name = "libfloppa"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "clap",
- "color-eyre",
- "futures",
- "serde",
- "serde_yaml",
- "tokio",
- "tracing",
- "twilight-gateway",
- "twilight-http",
- "twilight-model",
- "twilight-util",
-]
 
 [[package]]
 name = "libz-sys"

@@ -2,7 +2,7 @@ mod log;
 
 use std::sync::Arc;
 
-use libfloppa::{Cli, Config, FlopResult};
+use floppa::{Cli, Config, FlopResult};
 use log::FlopLog;
 use tokio::{fs, sync::RwLock};
 use tracing_subscriber::prelude::*;
@@ -70,7 +70,7 @@ async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
 
         cache.update(&event);
 
-        tokio::spawn(libfloppa::handle_event(
+        tokio::spawn(floppa::handle_event(
             event,
             Arc::clone(&http),
             Arc::clone(&cfg),

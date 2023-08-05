@@ -10,7 +10,7 @@ use tracing_subscriber::{layer::Context, Layer};
 use twilight_model::channel::message::Embed;
 use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder};
 
-use libfloppa::Config;
+use floppa::Config;
 
 #[derive(Debug)]
 pub struct FlopLog {
