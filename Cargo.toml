@@ -1,4 +1,4 @@
 
 [workspace]
-members = ["floppa", "floppa-runner"]
+members = ["floppa", "floppa-runner", "floppa-macros", "macro-test"]
 resolver = "2"

@@ -10,6 +10,7 @@ use std::{
 
 use clap::Parser;
 pub use color_eyre::Result as FlopResult;
+pub use command::Command;
 pub use config::Config;
 use tokio::{
     sync::RwLock,

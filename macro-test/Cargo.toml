@@ -1,0 +1,12 @@
+[package]
+name = "macro-test"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+floppa-macros = { path = "../floppa-macros" }
+floppa = { path = "../floppa" }
+twilight-model = "0.15"
+async-trait = "0.1"
