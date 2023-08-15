@@ -1,19 +1,39 @@
+mod args;
+
+use args::Args;
 use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, FnArg, ItemFn, Type};
 
 /// Generates a proc macro from a function into an instance of MessageCommand TODO LINK
+///
+/// # Function formatting:
+/// The function should be formatted like a normal rust function. The visibility of the generated
+/// struct is inherated from the function, and aegs are provided via the following list
+/// ## Function Args:
+/// - TODO Fill in when added.
+///
+/// # Macro Args:
+/// - `name` - The name of the struct, defaults to the function name in upper camel case
+///
 #[proc_macro_attribute]
-pub fn command(_args: TokenStream, input_stream: TokenStream) -> TokenStream {
+pub fn command(args: TokenStream, input_stream: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input_stream as ItemFn);
 
+    let args = parse_macro_input!(args as Args);
+
     let soucrce_ident = input.sig.ident;
-    let name = format_ident!(
-        "{}",
-        soucrce_ident.to_string().to_upper_camel_case(),
-        span = soucrce_ident.span()
-    );
+    let name = if let Some(name) = args.name {
+        name
+    } else {
+        format_ident!(
+            "{}",
+            soucrce_ident.to_string().to_upper_camel_case(),
+            span = soucrce_ident.span()
+        )
+    };
+
     let visibility = input.vis;
     let (impl_generics, ty_generics, where_clause) = input.sig.generics.split_for_impl();
     let block = input.block;

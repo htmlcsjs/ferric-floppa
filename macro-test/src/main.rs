@@ -2,10 +2,10 @@ use floppa::Command;
 use floppa_macros::command;
 
 fn main() {
-    dbg!(Test.raw());
+    dbg!(TestCommand.raw());
 }
 
-#[command]
+#[command(name(TestCommand))]
 pub fn test() -> i32 {
     4
 }
