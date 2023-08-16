@@ -15,6 +15,8 @@ use syn::{parse_macro_input, FnArg, ItemFn, Type};
 /// - TODO Fill in when added.
 ///
 /// # Macro Args:
+/// These are passed in the atturbute by either `arg(value)` or `arg = value`, a list of args
+/// and what they do is provided below. These are all optional, and defaults are listed below
 /// - `name` - The name of the struct, defaults to the function name in upper camel case
 ///
 #[proc_macro_attribute]
@@ -42,10 +44,11 @@ pub fn command(args: TokenStream, input_stream: TokenStream) -> TokenStream {
         #visibility struct #name #ty_generics #where_clause;
 
         #[async_trait::async_trait]
+        #[allow(unused_variables)]
         impl #impl_generics floppa::Command<'_> for #name #ty_generics #where_clause {
             type Data = ();
 
-            fn construct(_cfg: &floppa::ThreadCfg, _cli: &floppa::Cli, _data: Self::Data) -> Self {
+            fn construct(cfg: &floppa::ThreadCfg, cli: &floppa::Cli, data: Self::Data) -> Self {
                 Self
             }
 
@@ -54,7 +57,7 @@ pub fn command(args: TokenStream, input_stream: TokenStream) -> TokenStream {
                     http: std::sync::Arc<floppa::HttpClient>)
                 -> floppa::FlopResult<()>
             {
-                let msg = #block .to_string();
+                let msg = #block.to_string();
 
                 http.create_message(event.channel_id)
                     .reply(event.id)
@@ -63,10 +66,10 @@ pub fn command(args: TokenStream, input_stream: TokenStream) -> TokenStream {
                 Ok(())
             }
 
-            fn save(self) {}
+            fn save(self) -> Self::Data {}
 
             fn raw(&self) -> &'static str {
-                ""
+                "todo"
             }
         }
     };

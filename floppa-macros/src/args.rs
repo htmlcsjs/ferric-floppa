@@ -1,8 +1,12 @@
-use quote::ToTokens;
+use std::fmt::Debug;
+
+use quote::{quote, quote_spanned, ToTokens};
 use syn::{
+    parenthesized,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    Expr, ExprCall, Ident, Token,
+    token::Paren,
+    Error as SynErr, Ident, Path, Token,
 };
 
 #[derive(Default, Debug)]
@@ -12,54 +16,89 @@ pub struct Args {
 
 impl Parse for Args {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // having this be a call expression is not the greatest but icba to write my own item
-        let inner: Punctuated<ExprCall, Token!(,)> = Punctuated::parse_terminated(input)?;
+        // should not hard lock Arg to be path but effort
+        let inner: Punctuated<Arg<Path>, Token!(,)> = Punctuated::parse_terminated(input)?;
         let mut new = Self::default();
 
-        for call in inner {
-            if let Expr::Path(expr) = *call.func {
-                if expr.path == syn::parse_str("name")? {
-                    let args = call.args.iter().collect::<Vec<_>>();
-                    if args.len() != 1 {
-                        return Err(syn::Error::new_spanned(
-                            call.args,
-                            "This value expects one argument",
-                        ));
-                    } else if new.name.is_some() {
-                        return Err(syn::Error::new_spanned(
-                            call.args,
-                            "Name has already been set",
-                        ));
-                    } else {
-                        if let Expr::Path(path) = args[0] {
-                            new.name = Some(
-                                path.path
-                                    .get_ident()
-                                    .ok_or(syn::Error::new_spanned(
-                                        path,
-                                        "This is not a valid identifier",
-                                    ))?
-                                    .clone(),
-                            );
+        for arg in inner {
+            match arg.name.to_string().as_str() {
+                "name" => {
+                    if let Some(ident) = arg.value.get_ident() {
+                        if new.name.is_none() {
+                            new.name = Some(ident.clone());
                         } else {
-                            let msg =
-                                format!("`{}` is not an identifier", args[0].to_token_stream());
-                            return Err(syn::Error::new_spanned(args[0], msg));
+                            return Err(SynErr::new_spanned(arg, "name has already been set"));
                         }
+                    } else {
+                        let msg = format!(
+                            "`{}` is not a valid struct identifier",
+                            arg.value.to_token_stream()
+                        );
+                        return Err(SynErr::new_spanned(arg.value, msg));
                     }
-                } else {
-                    let msg = format!("`{}` is not a supported value", expr.to_token_stream());
-                    return Err(syn::Error::new_spanned(expr, msg));
                 }
-            } else {
-                let msg = format!(
-                    "`{}` is not a recognised value",
-                    call.func.to_token_stream()
-                );
-                return Err(syn::Error::new_spanned(call, msg));
+                e => {
+                    return Err(SynErr::new_spanned(
+                        arg.name,
+                        format!("`{e}` is not a valid argument"),
+                    ))
+                }
             }
         }
 
         Ok(new)
     }
+}
+
+#[derive(Debug)]
+struct Arg<T> {
+    name: Ident,
+    value: T,
+    assignment_token: ArgAssignment,
+}
+
+impl<T: Parse> Parse for Arg<T> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut lookahead = input.lookahead1();
+        if lookahead.peek(Ident) {
+            let ident: Ident = input.parse()?;
+            lookahead = input.lookahead1();
+
+            if lookahead.peek(Token!(=)) {
+                return Ok(Self {
+                    name: ident,
+                    assignment_token: ArgAssignment::Equals(input.parse()?),
+                    value: input.parse()?,
+                });
+            } else if lookahead.peek(Paren) {
+                let value;
+                return Ok(Self {
+                    name: ident,
+                    assignment_token: ArgAssignment::Paren(parenthesized!(value in input)),
+                    value: value.parse()?,
+                });
+            }
+        }
+
+        Err(lookahead.error())
+    }
+}
+
+impl<T: ToTokens> ToTokens for Arg<T> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self.assignment_token {
+            ArgAssignment::Paren(paren) => {
+                tokens.extend(quote_spanned!(paren.span.join()=> #self.name(#self.value)))
+            }
+            ArgAssignment::Equals(equals) => {
+                tokens.extend(quote!(#self.name #equals #self.value));
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ArgAssignment {
+    Paren(Paren),
+    Equals(Token!(=)),
 }
