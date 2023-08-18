@@ -790,6 +790,7 @@ dependencies = [
  "async-trait",
  "floppa",
  "floppa-macros",
+ "serde",
  "twilight-model",
 ]
 

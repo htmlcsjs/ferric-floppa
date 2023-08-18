@@ -6,6 +6,6 @@ fn main() {
 }
 
 #[command(name(TestCommand))]
-pub fn test() -> i32 {
-    4
+pub fn test(a: i16) -> i32 {
+    a.into()
 }

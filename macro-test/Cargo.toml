@@ -10,3 +10,4 @@ floppa-macros = { path = "../floppa-macros" }
 floppa = { path = "../floppa" }
 twilight-model = "0.15"
 async-trait = "0.1"
+serde = "1.0"
