@@ -2,21 +2,17 @@ mod command;
 pub mod config;
 
 use std::{
-    error::Error,
     path::{Path, PathBuf},
     process,
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use clap::Parser;
+use serenity::{prelude::*, model::prelude::*};
 pub use color_eyre::Result as FlopResult;
 pub use config::Config;
-use tokio::{
-    sync::RwLock,
-    time::{sleep, Duration},
-};
-use twilight_gateway::Event;
-pub use twilight_http::Client as HttpClient;
+use tokio::sync::RwLock;
 
 pub type ThreadCfg = Arc<RwLock<Config>>;
 
@@ -52,30 +48,20 @@ impl Cli {
     }
 }
 
-pub async fn handle_event(
-    event: Event,
-    http: Arc<HttpClient>,
-    cfg: ThreadCfg,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let prefix = {
-        let handle = cfg.read().await;
-        handle.prefix.to_string()
-    };
+pub struct FlopHandler;
 
-    match event {
-        Event::MessageCreate(msg) if msg.content.starts_with(&prefix) => {
-            sleep(Duration::from_millis(5000)).await;
-            http.create_message(msg.channel_id)
-                .reply(msg.id)
-                .content(":flop:")?
-                .await?;
+#[async_trait]
+impl EventHandler for FlopHandler {
+    async fn message(&self, ctx: Context, msg: Message) {
+        if msg.content == "!ping" {
+
+            if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
+                println!("Error sending message: {:?}", why);
+            }
         }
-        // Other events here...
-        Event::Ready(ready) => {
-            tracing::info!("Logged in as {}", ready.user.name);
-        }
-        _ => (),
     }
 
-    Ok(())
+    async fn ready(&self, _: Context, ready: Ready) {
+        println!("connected as {}", ready.user.name);
+    }
 }

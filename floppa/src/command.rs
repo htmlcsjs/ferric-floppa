@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use twilight_model::gateway::payload::incoming::MessageCreate;
+use serenity::{model::prelude::Message, prelude::Context};
 
-use crate::{Cli, FlopResult, HttpClient, ThreadCfg};
+use crate::{Cli, FlopResult, ThreadCfg};
 
 #[async_trait]
 pub trait Command<'a> {
@@ -17,8 +15,8 @@ pub trait Command<'a> {
     /// Allows the command to update itself on config change
     fn cfg_update(&mut self, _cfg: &ThreadCfg) {}
 
-    /// Executes the command on the given MessageCreate event
-    async fn execute(&mut self, event: &MessageCreate, http: Arc<HttpClient>) -> FlopResult<()>;
+    /// Executes the command on the given Message event
+    async fn execute(&mut self, event: &Message, ctx: &Context) -> FlopResult<()>;
 
     /// Allows the command to serialise data to be asked
     /// Consumes the command, so it will be reinitalised
@@ -42,11 +40,8 @@ impl Command<'_> for MessageCommand {
         Self { message: data }
     }
 
-    async fn execute(&mut self, event: &MessageCreate, http: Arc<HttpClient>) -> FlopResult<()> {
-        http.create_message(event.channel_id)
-            .reply(event.id)
-            .content(&self.message)?
-            .await?;
+    async fn execute(&mut self, msg: &Message, ctx: &Context) -> FlopResult<()> {
+        msg.reply(&ctx.http, &self.message).await?;
         Ok(())
     }
 

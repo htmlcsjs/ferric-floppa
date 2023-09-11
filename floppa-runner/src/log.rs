@@ -1,14 +1,13 @@
 use std::{collections::HashMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+use serenity::model::prelude::Embed;
 use tracing::{
     callsite::Identifier,
     field::{Field, Visit},
     Level, Metadata, Subscriber,
 };
 use tracing_subscriber::{layer::Context, Layer};
-use twilight_model::channel::message::Embed;
-use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder};
 
 use floppa::Config;
 
@@ -63,20 +62,16 @@ where
         }
         description = format!("# {message}\n{description}");
 
-        let mut embed_builder = EmbedBuilder::new()
-            .description(description)
+        let embed = Embed::fake(|e| {
+            e.description(description)
             .title(title)
-            .field(EmbedFieldBuilder::new("Level", format!("`{}`", metadata.level())).inline())
-            .field(EmbedFieldBuilder::new(
-                "Name",
-                format!("`{}`", metadata.name()),
-            ))
-            .field(EmbedFieldBuilder::new("Target", format!("`{}`", metadata.target())).inline())
+            .field("Level", format!("`{}`", metadata.level()), true)
+            .field("Name", format!("`{}`", metadata.name()), false)
+            .field("Target", format!("`{}`", metadata.target()), true)
             .color(colour_from_level(*metadata.level()));
 
         if let Some(path) = metadata.module_path() {
-            embed_builder =
-                embed_builder.field(EmbedFieldBuilder::new("Path", format!("`{path}`")).inline());
+            e.field("Path", format!("`{path}`"), true);
         }
 
         if let Some(file) = metadata.file() {
@@ -84,16 +79,17 @@ where
             if let Some(num) = metadata.line() {
                 line_num = num.to_string();
             }
-            embed_builder = embed_builder.field(EmbedFieldBuilder::new(
-                "Location",
-                format!("`{file}:{}`", line_num),
-            ))
+
+            e.field("Location", format!("`{file}:{}`", line_num), false);
         }
+
+        e
+    });
 
         if let Err(e) = ureq::post(&self.webhook).send_json(WebhookMessage {
             content: None,
             attachments: Vec::new(),
-            embeds: vec![embed_builder.build()],
+            embeds: vec![embed],
         }) {
             panic!("Error sending message to webhook: {e}");
         }
@@ -130,7 +126,7 @@ fn level_from_str(level: &str) -> Level {
 #[derive(Debug, Serialize, Deserialize)]
 struct WebhookMessage {
     content: Option<String>,
-    embeds: Vec<Embed>,
+    embeds: Vec<ureq::serde_json::Value>,
     attachments: Vec<String>,
 }
 

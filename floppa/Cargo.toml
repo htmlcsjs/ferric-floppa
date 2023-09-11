@@ -9,12 +9,9 @@ edition = "2021"
 tokio = { version = "1.29", features = ["macros", "rt-multi-thread", "fs"] }
 clap = { version = "4.3", features = ["derive"] }
 futures = "0.3"
-twilight-gateway = "0.15"
-twilight-http = "0.15"
-twilight-model = "0.15"
+serenity = "0.11"
 color-eyre = "0.6"
 tracing = "0.1"
 serde = "1.0"
 serde_yaml = "0.9"
-twilight-util = { version = "0.15", features = ["builder"] }
 async-trait = "0.1"

@@ -2,14 +2,11 @@ mod log;
 
 use std::sync::Arc;
 
-use floppa::{Cli, Config, FlopResult};
+use floppa::{Cli, Config, FlopResult, FlopHandler};
 use log::FlopLog;
 use tokio::{fs, sync::RwLock};
 use tracing_subscriber::prelude::*;
-use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::{Shard, ShardId};
-pub use twilight_http::Client as HttpClient;
-use twilight_model::gateway::Intents;
+use serenity::prelude::*;
 
 #[tokio::main]
 async fn main() {
@@ -37,45 +34,18 @@ async fn main() {
 
 async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
     // TODO: Have a default for this
-    let cfg = Arc::new(RwLock::new(cfg));
+    let _cfg = Arc::new(RwLock::new(cfg));
 
     let temp_token = fs::read_to_string(cli.get_path("token")).await?;
     let token = temp_token.trim().to_string();
 
-    let mut shard = Shard::new(
-        ShardId::ONE,
-        token.clone(),
-        Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
-    );
+    let intents = GatewayIntents::GUILD_MESSAGES
+    | GatewayIntents::DIRECT_MESSAGES
+    | GatewayIntents::MESSAGE_CONTENT;
 
-    let http = Arc::new(HttpClient::new(token));
+    let mut client = Client::builder(&token, intents).event_handler(FlopHandler).await?;
 
-    let cache = InMemoryCache::builder()
-        .resource_types(ResourceType::MESSAGE)
-        .build();
-
-    loop {
-        let event = match shard.next_event().await {
-            Ok(event) => event,
-            Err(source) => {
-                tracing::warn!(?source, "error receiving event");
-
-                if source.is_fatal() {
-                    break;
-                }
-
-                continue;
-            }
-        };
-
-        cache.update(&event);
-
-        tokio::spawn(floppa::handle_event(
-            event,
-            Arc::clone(&http),
-            Arc::clone(&cfg),
-        ));
-    }
+    client.start().await?;
 
     Ok(())
 }
