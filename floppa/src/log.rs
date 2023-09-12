@@ -9,7 +9,7 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Context, Layer};
 
-use floppa::Config;
+use crate::Config;
 
 #[derive(Debug)]
 pub struct FlopLog {
@@ -33,7 +33,15 @@ where
     S: Subscriber,
 {
     fn enabled(&self, metadata: &Metadata, _ctx: Context<S>) -> bool {
-        metadata.level() <= &self.min_level
+        if metadata
+            .module_path()
+            .is_some_and(|x| !x.starts_with("floppa"))
+            || !metadata.target().starts_with("floppa")
+        {
+            metadata.level() < &Level::DEBUG && metadata.level() < &self.min_level
+        } else {
+            metadata.level() <= &self.min_level
+        }
     }
 
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
@@ -64,27 +72,27 @@ where
 
         let embed = Embed::fake(|e| {
             e.description(description)
-            .title(title)
-            .field("Level", format!("`{}`", metadata.level()), true)
-            .field("Name", format!("`{}`", metadata.name()), false)
-            .field("Target", format!("`{}`", metadata.target()), true)
-            .color(colour_from_level(*metadata.level()));
+                .title(title)
+                .field("Level", format!("`{}`", metadata.level()), true)
+                .field("Name", format!("`{}`", metadata.name()), false)
+                .field("Target", format!("`{}`", metadata.target()), true)
+                .color(colour_from_level(*metadata.level()));
 
-        if let Some(path) = metadata.module_path() {
-            e.field("Path", format!("`{path}`"), true);
-        }
-
-        if let Some(file) = metadata.file() {
-            let mut line_num = "??".to_owned();
-            if let Some(num) = metadata.line() {
-                line_num = num.to_string();
+            if let Some(path) = metadata.module_path() {
+                e.field("Path", format!("`{path}`"), true);
             }
 
-            e.field("Location", format!("`{file}:{}`", line_num), false);
-        }
+            if let Some(file) = metadata.file() {
+                let mut line_num = "??".to_owned();
+                if let Some(num) = metadata.line() {
+                    line_num = num.to_string();
+                }
 
-        e
-    });
+                e.field("Location", format!("`{file}:{}`", line_num), false);
+            }
+
+            e
+        });
 
         if let Err(e) = ureq::post(&self.webhook).send_json(WebhookMessage {
             content: None,

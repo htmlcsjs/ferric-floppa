@@ -1,6 +1,5 @@
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serenity::{model::prelude::Message, prelude::Context};
+use serenity::{async_trait, model::prelude::*, prelude::*};
 
 use crate::{Cli, FlopResult, ThreadCfg};
 
