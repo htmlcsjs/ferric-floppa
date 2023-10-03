@@ -20,21 +20,87 @@ use serenity::builder::CreateMessage;
 /// }
 ///
 /// impl Messagable for MyStruct {
-///     fn create<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
+///     fn modify_message<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
 ///         builder.content(self.a * self.b)
 ///     }
 /// }
 /// ```
 pub trait Messagable {
     /// Takes a [`CreateMessage`] and adds/changes content to it, finally returning it.
-    fn create<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b>;
+    fn modify_message<'a, 'b>(
+        &self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b>;
+
+    /// Chains together this with another [`Messagable`].
+    ///
+    /// The order of execution is `self` then `other`.
+    ///
+    /// ## Examples
+    /// ```
+    /// use messagable::Messagable;
+    /// use serenity::builder::CreateMessage;
+    ///
+    /// struct CharReact(char);
+    ///
+    /// impl Messagable for MyStruct {
+    ///     fn modify_message<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
+    ///         builder.reactions([self.0])
+    ///     }
+    /// }
+    ///
+    /// fn test() {
+    /// "a".chain(ChatReact('🍎')); // "a" is set as message body *then* '🍎' is added as an reaction
+    /// }
+    /// ```
+    fn chain<T>(self, other: T) -> Chain<Self, T>
+    where
+        Self: Sized,
+        T: Messagable,
+    {
+        Chain {
+            first: self,
+            second: other,
+        }
+    }
 }
 
 impl<T> Messagable for T
 where
     T: Display,
 {
-    fn create<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
+    fn modify_message<'a, 'b>(
+        &self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b> {
         builder.content(self)
+    }
+}
+
+/// Chains together two things that are [`Messagable`].
+///
+/// Helper trait for [`Messagable::chain`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Chain<T, U>
+where
+    T: Messagable,
+    U: Messagable,
+{
+    first: T,
+    second: U,
+}
+
+impl<T, U> Messagable for Chain<T, U>
+where
+    T: Messagable,
+    U: Messagable,
+{
+    fn modify_message<'a, 'b>(
+        &self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b> {
+        let builder = self.first.modify_message(builder);
+        builder.reactions(['🍎']);
+        self.second.modify_message(builder)
     }
 }
