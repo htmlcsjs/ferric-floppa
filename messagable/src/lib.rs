@@ -43,14 +43,14 @@ pub trait Messagable {
     ///
     /// struct CharReact(char);
     ///
-    /// impl Messagable for MyStruct {
+    /// impl Messagable for CharReact {
     ///     fn modify_message<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
     ///         builder.reactions([self.0])
     ///     }
     /// }
     ///
     /// fn test() {
-    /// "a".chain(ChatReact('🍎')); // "a" is set as message body *then* '🍎' is added as an reaction
+    ///     "a".chain(CharReact('🍎')); // "a" is set as message body *then* '🍎' is added as an reaction
     /// }
     /// ```
     fn chain<T>(self, other: T) -> Chain<Self, T>
