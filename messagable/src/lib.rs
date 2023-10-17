@@ -1,6 +1,9 @@
-use std::fmt::Display;
-
-use serenity::{builder::CreateMessage, http::Http, model::prelude::*, Error};
+use serenity::{
+    builder::{CreateEmbed, CreateMessage},
+    http::Http,
+    model::prelude::*,
+    Error,
+};
 
 #[async_trait::async_trait]
 pub trait Messagable {
@@ -33,7 +36,7 @@ pub trait Messagable {
 
     /// Takes a [`CreateMessage`] and adds/changes content to it, finally returning it.
     fn modify_message<'a, 'b>(
-        &self,
+        self,
         builder: &'a mut CreateMessage<'b>,
     ) -> &'a mut CreateMessage<'b>;
 
@@ -72,7 +75,10 @@ pub trait Messagable {
     /// Replies to a message with this as the message data
     ///
     /// Returns a result with the message or an error
-    async fn reply(&self, msg: &Message, http: &Http) -> Result<Message, Error> {
+    async fn reply(self, msg: &Message, http: &Http) -> Result<Message, Error>
+    where
+        Self: Sized,
+    {
         msg.channel_id
             .send_message(http, |b| {
                 b.reference_message(msg);
@@ -84,20 +90,11 @@ pub trait Messagable {
     /// Sends a message in a channel with this as the message data
     ///
     /// Returns a result with the message or an error
-    async fn send(&self, channel: ChannelId, http: &Http) -> Result<Message, Error> {
+    async fn send(self, channel: ChannelId, http: &Http) -> Result<Message, Error>
+    where
+        Self: Sized,
+    {
         channel.send_message(http, |b| self.modify_message(b)).await
-    }
-}
-
-impl<T> Messagable for T
-where
-    T: Display,
-{
-    fn modify_message<'a, 'b>(
-        &self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
-        builder.content(self)
     }
 }
 
@@ -120,11 +117,51 @@ where
     U: Messagable,
 {
     fn modify_message<'a, 'b>(
-        &self,
+        self,
         builder: &'a mut CreateMessage<'b>,
     ) -> &'a mut CreateMessage<'b> {
         let builder = self.first.modify_message(builder);
-        builder.reactions(['🍎']);
         self.second.modify_message(builder)
+    }
+}
+
+impl Messagable for CreateEmbed {
+    fn modify_message<'a, 'b>(
+        self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b> {
+        // could be done better instead of constructing a vec,
+        // however it would involve a clone, and this is probally cheaper
+        // (its going to get optimised away i bet)
+        builder.add_embeds(vec![self])
+    }
+}
+
+impl Messagable for Vec<CreateEmbed> {
+    fn modify_message<'a, 'b>(
+        self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b> {
+        builder.add_embeds(self)
+    }
+}
+
+/// Sets the body of the message to the value of the string.
+///
+/// Can be converted from a type that implments [`ToString`], using [`Into`]
+pub struct MessageContent(String);
+
+impl From<&dyn ToString> for MessageContent {
+    fn from(value: &dyn ToString) -> Self {
+        MessageContent(value.to_string())
+    }
+}
+
+impl Messagable for MessageContent {
+    fn modify_message<'a, 'b>(
+        self,
+        builder: &'a mut CreateMessage<'b>,
+    ) -> &'a mut CreateMessage<'b> {
+        builder.content(self.0)
     }
 }
