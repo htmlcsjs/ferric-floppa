@@ -3,6 +3,7 @@ pub mod config;
 mod log;
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     process,
     sync::Arc,
@@ -10,10 +11,12 @@ use std::{
 
 use clap::Parser;
 pub use color_eyre::Result as FlopResult;
+use command::{Command, MessageCommand};
 use config::Config;
 use log::FlopLog;
-use serenity::{async_trait, model::prelude::*, prelude::*};
+use serenity::{async_trait, futures::TryFutureExt, model::prelude::*, prelude::*};
 use tokio::{fs, sync::RwLock};
+use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
 
 #[tokio::main]
@@ -36,13 +39,13 @@ async fn main() {
         .init();
 
     if let Err(e) = run(cli, cfg).await {
-        tracing::error!("Fatal error encountered: {e}")
+        error!("Fatal error encountered: {e}")
     }
 }
 
 async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
     // TODO: Have a default for this
-    let _cfg = Arc::new(RwLock::new(cfg));
+    // let _cfg = Arc::new(RwLock::new(cfg));
 
     let temp_token = fs::read_to_string(cli.get_path("token")).await?;
     let token = temp_token.trim().to_string();
@@ -52,7 +55,7 @@ async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
         | GatewayIntents::MESSAGE_CONTENT;
 
     let mut client = Client::builder(&token, intents)
-        .event_handler(FlopHandler)
+        .event_handler(FlopHandler::new(cfg, cli))
         .await?;
 
     client.start().await?;
@@ -82,7 +85,7 @@ impl Cli {
         let mut new = Self::parse();
         new.run_dir = new.run_dir.canonicalize()?;
         if !new.run_dir.is_dir() {
-            tracing::error!("{} is not a directory!", new.run_dir.display());
+            error!("{} is not a directory!", new.run_dir.display());
             process::exit(1);
         }
         Ok(new)
@@ -94,19 +97,59 @@ impl Cli {
     }
 }
 
-pub struct FlopHandler;
+#[derive(Debug)]
+pub struct FlopHandler {
+    cfg: Config,
+    cli: Cli,
+    // TODO: improve cmd registry
+    commands: HashMap<String, CommandsValue>,
+}
+
+type CommandsValue = Arc<Mutex<dyn Command + Send + Sync>>;
+
+impl FlopHandler {
+    pub fn new(cfg: Config, cli: Cli) -> Self {
+        let mut new = Self {
+            cfg,
+            cli,
+            commands: HashMap::new(),
+        };
+        new.commands.insert(
+            "halp".to_string(),
+            Arc::new(Mutex::new(MessageCommand::construct(
+                &new.cfg,
+                &new.cli,
+                "flop is dead".into(),
+            ))),
+        );
+        new
+    }
+}
 
 #[async_trait]
 impl EventHandler for FlopHandler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content == "!ping" {
-            if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
-                tracing::error!("Error sending message: {:?}", why);
+        if msg.content.starts_with(&self.cfg.prefix) {
+            match msg.content.split_whitespace().next() {
+                Some(s) => {
+                    let name = &s[self.cfg.prefix.len()..];
+                    let cmds = &self.commands;
+                    debug!("command {} was called", name);
+
+                    if let Some(cmd) = cmds.get(name) {
+                        let mut cmd = cmd.lock().await;
+
+                        cmd.execute(&msg, &ctx)
+                            .unwrap_or_else(|e| error!("Error running ${name}:```rust\n{e}```"))
+                            .await;
+                    }
+                }
+                None => todo!(),
             }
         }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        tracing::info!("Connected as {}", ready.user.name);
+        info!("Connected as {}", ready.user.name);
     }
 }
