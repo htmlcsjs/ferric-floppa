@@ -14,7 +14,7 @@ pub use color_eyre::Result as FlopResult;
 use command::{Command, MessageCommand};
 use config::Config;
 use log::FlopLog;
-use serenity::{async_trait, futures::TryFutureExt, model::prelude::*, prelude::*};
+use serenity::{async_trait, model::prelude::*, prelude::*};
 use tokio::{fs, sync::RwLock};
 use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
@@ -130,21 +130,27 @@ impl FlopHandler {
 impl EventHandler for FlopHandler {
     async fn message(&self, ctx: Context, msg: Message) {
         if msg.content.starts_with(&self.cfg.prefix) {
-            match msg.content.split_whitespace().next() {
-                Some(s) => {
-                    let name = &s[self.cfg.prefix.len()..];
-                    let cmds = &self.commands;
-                    debug!("command {} was called", name);
+            if let Some(s) = msg.content.split_whitespace().next() {
+                let name = &s[self.cfg.prefix.len()..];
+                let cmds = &self.commands;
+                debug!("command {} was called", name);
 
-                    if let Some(cmd) = cmds.get(name) {
-                        let mut cmd = cmd.lock().await;
+                if let Some(cmd) = cmds.get(name) {
+                    let mut cmd = cmd.lock().await;
 
-                        cmd.execute(&msg, &ctx)
-                            .unwrap_or_else(|e| error!("Error running ${name}:```rust\n{e}```"))
-                            .await;
+                    let result = cmd.execute(&msg, &ctx).await;
+                    match result {
+                        Ok(Some(m)) => {
+                            if let Err(e) = m.send(&msg, &ctx.http).await {
+                                error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
+                        }
+                        _ => (),
                     }
                 }
-                None => todo!(),
             }
         }
     }

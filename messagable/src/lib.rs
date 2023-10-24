@@ -6,7 +6,7 @@ use serenity::{
 };
 
 #[async_trait::async_trait]
-pub trait Messagable {
+pub trait Messagable: std::fmt::Debug + Sync + Send {
     //! Allows for the construction of messages from a value, without having to write
     //! all the boilerplate for message construction.
     //!
@@ -92,7 +92,7 @@ pub trait Messagable {
     /// Returns a result with the message or an error
     async fn send(self, channel: ChannelId, http: &Http) -> Result<Message, Error>
     where
-        Self: Sized,
+        Self: Sized + Send + Sync,
     {
         channel.send_message(http, |b| self.modify_message(b)).await
     }
@@ -146,22 +146,11 @@ impl Messagable for Vec<CreateEmbed> {
     }
 }
 
-/// Sets the body of the message to the value of the string.
-///
-/// Can be converted from a type that implments [`ToString`], using [`Into`]
-pub struct MessageContent(String);
-
-impl From<&dyn ToString> for MessageContent {
-    fn from(value: &dyn ToString) -> Self {
-        MessageContent(value.to_string())
-    }
-}
-
-impl Messagable for MessageContent {
+impl Messagable for String {
     fn modify_message<'a, 'b>(
         self,
         builder: &'a mut CreateMessage<'b>,
     ) -> &'a mut CreateMessage<'b> {
-        builder.content(self.0)
+        builder.content(self)
     }
 }
