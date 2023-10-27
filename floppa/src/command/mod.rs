@@ -62,7 +62,7 @@ impl Messagable for FlopMessagable<'_> {
             FlopMessagable::Text(s) => s.modify_message(builder),
             FlopMessagable::Embeds(e) => e.modify_message(builder),
             FlopMessagable::Response(msg) => builder
-                .allowed_mentions(|x| x.empty_parse().replied_user(true))
+                .allowed_mentions(|x| x.empty_parse().replied_user(false))
                 .reference_message(msg),
         }
     }
