@@ -19,6 +19,8 @@ use tokio::{fs, sync::RwLock};
 use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
 
+const FALLBACK_EMOTE: &str = "⚠";
+
 #[tokio::main]
 async fn main() {
     color_eyre::install().expect("failed to install panic handler");
@@ -101,17 +103,33 @@ impl Cli {
 pub struct FlopHandler {
     cfg: Config,
     cli: Cli,
+    emoji: EmojiCache,
     // TODO: improve cmd registry
     commands: HashMap<String, CommandsValue>,
+}
+
+#[derive(Debug)]
+struct EmojiCache {
+    emoji: ReactionType,
+    text: String,
 }
 
 type CommandsValue = Arc<Mutex<dyn Command + Send + Sync>>;
 
 impl FlopHandler {
     pub fn new(cfg: Config, cli: Cli) -> Self {
+        // TODO: Move the init stuff to a method taking &mut self
+        let emoji = EmojiCache {
+            emoji: cfg.emoji.emoji.as_str().try_into().unwrap_or_else(|e| {
+                error!("Error constructing reaction emoji:```\n{e}```");
+                ReactionType::Unicode(FALLBACK_EMOTE.to_string())
+            }),
+            text: fomat_reaction_string(&cfg.emoji.phrase),
+        };
         let mut new = Self {
             cfg,
             cli,
+            emoji,
             commands: HashMap::new(),
         };
         new.commands.insert(
@@ -124,12 +142,9 @@ impl FlopHandler {
         );
         new
     }
-}
 
-#[async_trait]
-impl EventHandler for FlopHandler {
-    async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content.starts_with(&self.cfg.prefix) {
+    async fn handle_command(&self, ctx: &Context, msg: Message) {
+        if !msg.author.bot && msg.content.starts_with(&self.cfg.prefix) {
             if let Some(s) = msg.content.split_whitespace().next() {
                 let name = &s[self.cfg.prefix.len()..];
                 let cmds = &self.commands;
@@ -138,7 +153,7 @@ impl EventHandler for FlopHandler {
                 if let Some(cmd) = cmds.get(name) {
                     let mut cmd = cmd.lock().await;
 
-                    let result = cmd.execute(&msg, &ctx).await;
+                    let result = cmd.execute(&msg, ctx).await;
                     match result {
                         Ok(Some(m)) => {
                             if let Err(e) = m.send(&msg, &ctx.http).await {
@@ -154,8 +169,28 @@ impl EventHandler for FlopHandler {
             }
         }
     }
+}
+
+#[async_trait]
+impl EventHandler for FlopHandler {
+    async fn message(&self, ctx: Context, msg: Message) {
+        if fomat_reaction_string(&msg.content).contains(&self.emoji.text) {
+            let result = msg.react(&ctx.http, self.emoji.emoji.clone()).await;
+            if let Err(e) = result {
+                error!("Error reacting to `{}`:`{e}`", msg.link())
+            }
+        }
+        // Handle potental command calls.
+        self.handle_command(&ctx, msg).await;
+    }
 
     async fn ready(&self, _: Context, ready: Ready) {
         info!("Connected as {}", ready.user.name);
     }
+}
+
+fn fomat_reaction_string(text: &str) -> String {
+    let mut chars: Vec<char> = text.chars().filter(|x| !x.is_whitespace()).collect();
+    chars.dedup();
+    chars.into_iter().collect()
 }

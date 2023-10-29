@@ -68,7 +68,7 @@ where
                 description += &format!("- `{name}`: `{value}`\n")
             }
         }
-        description = format!("# {message}\n{description}");
+        description = format!("{message}\n{description}");
 
         let embed = Embed::fake(|e| {
             e.description(description)

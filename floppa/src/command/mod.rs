@@ -53,7 +53,6 @@ pub enum FlopMessagable<'a> {
 }
 
 impl Messagable for FlopMessagable<'_> {
-    #[doc = " Takes a [`CreateMessage`] and adds/changes content to it, finally returning it."]
     fn modify_message<'a, 'b>(
         self,
         builder: &'a mut CreateMessage<'b>,
