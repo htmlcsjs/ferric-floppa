@@ -145,28 +145,39 @@ impl FlopHandler {
 
     async fn handle_command(&self, ctx: &Context, msg: Message) {
         if !msg.author.bot && msg.content.starts_with(&self.cfg.prefix) {
-            if let Some(s) = msg.content.split_whitespace().next() {
-                let name = &s[self.cfg.prefix.len()..];
-                let cmds = &self.commands;
-                debug!("command {} was called", name);
+            // Check if the messages starts with prefix, and if so,
+            // get the first "word"
+            let Some(s) = msg.content.split_whitespace().next() else {
+                return;
+            };
 
-                if let Some(cmd) = cmds.get(name) {
-                    let mut cmd = cmd.lock().await;
+            // Get the name of the command to be ran
+            let name = &s[self.cfg.prefix.len()..];
+            let cmds = &self.commands;
+            debug!("command {} was called", name);
 
-                    let result = cmd.execute(&msg, ctx).await;
-                    match result {
-                        Ok(Some(m)) => {
-                            if let Err(e) = m.send(&msg, &ctx.http).await {
-                                error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
-                            }
-                        }
-                        Err(e) => {
-                            error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
-                        }
-                        _ => (),
+            // Find the actual command object and obtain a lock for it
+            let Some(cmd) = cmds.get(name) else {
+                return;
+            };
+            let mut cmd = cmd.lock().await;
+
+            // Execute the command
+            let result = cmd.execute(&msg, ctx).await;
+            // Send the result
+            match result {
+                Ok(Some(m)) => {
+                    if let Err(e) = m.send(&msg, &ctx.http).await {
+                        error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
                     }
                 }
+                Err(e) => {
+                    error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
+                }
+                _ => (),
             }
+            // Drop the lock
+            drop(cmd);
         }
     }
 }
@@ -189,6 +200,7 @@ impl EventHandler for FlopHandler {
     }
 }
 
+/// Dedups and removes whitespace from a string
 fn fomat_reaction_string(text: &str) -> String {
     let mut chars: Vec<char> = text.chars().filter(|x| !x.is_whitespace()).collect();
     chars.dedup();
