@@ -3,7 +3,6 @@ use tracing::error;
 
 use crate::{
     command::{Command, FlopMessagable},
-    config::Config,
     Cli, FlopResult,
 };
 
@@ -14,7 +13,7 @@ pub struct MessageCommand<'a> {
 
 #[async_trait]
 impl Command for MessageCommand<'_> {
-    fn construct(_cfg: &Config, _cli: &Cli, data: rmpv::Value) -> Self {
+    fn construct(_cli: &Cli, data: rmpv::Value) -> Self {
         Self {
             message: rmpv::ext::from_value(data)
                 .unwrap_or_else(|e| {

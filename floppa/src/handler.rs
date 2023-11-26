@@ -47,7 +47,6 @@ impl FlopHandler {
         new.commands.insert(
             "halp".to_string(),
             Arc::new(Mutex::new(MessageCommand::construct(
-                &new.cfg,
                 &new.cli,
                 "flop is dead".into(),
             ))),

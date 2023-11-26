@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "CREATE TABLE IF NOT EXISTS registries(\n    id        INTEGER  PRIMARY KEY AUTOINCREMENT,\n    name      TEXT     NOT NULL UNIQUE,\n    super     TEXT     NULL\n);\nCREATE TABLE IF NOT EXISTS commands(\n    id        INTEGER  PRIMARY KEY AUTOINCREMENT,\n    name      TEXT     NOT NULL UNIQUE,\n    owner     INTEGER  NOT NULL,\n    type      TEXT     NOT NULL,\n    registry  INTEGER  NOT NULL UNIQUE,\n    added     INTEGER  NULL,\n    data      BLOB     NULL,\n    FOREIGN KEY(registry) REFERENCES registries(id)\n);",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "9da3ef92b4224ff046ca9a28558951afd4a06e48c9a277636bacc0dcfd5ac411"
+}

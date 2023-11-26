@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT commands.name, commands.id, owner, type as ty, data, added, registries.name AS registry\nFROM commands, registries\nWHERE registries.id = commands.registry;",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "id",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "owner",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "ty",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "data",
+        "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "added",
+        "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "registry",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "a48725d5502a408ed8646c99cc84941a389e5d8323fe505100c78f67a548245f"
+}

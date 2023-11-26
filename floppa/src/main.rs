@@ -2,6 +2,7 @@ mod command;
 pub mod config;
 mod handler;
 mod log;
+mod sql;
 
 use std::{
     path::{Path, PathBuf},
@@ -25,7 +26,7 @@ async fn main() {
 
     let cli = match Cli::initlise() {
         Ok(inner) => inner,
-        Err(e) => panic!("Fatal error loading cli args:\n{e}"),
+        Err(e) => panic!("Fatal error loading cli args:\n{e:?}"),
     };
 
     let cfg = match Config::load_from_fs(&cli) {

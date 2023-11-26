@@ -73,3 +73,5 @@ flycheck_*.el
 
 # bacon configuration
 bacon.toml
+
+.env
