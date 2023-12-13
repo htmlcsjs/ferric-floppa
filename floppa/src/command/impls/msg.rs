@@ -6,6 +6,8 @@ use crate::{
     Cli, FlopResult,
 };
 
+const ERROR_BYTES: &[u8] = "⚠️**ERROR**⚠️ Unable to serialise value".as_bytes();
+
 #[derive(Debug)]
 pub struct MessageCommand<'a> {
     message: FlopMessagable<'a>,
@@ -13,15 +15,10 @@ pub struct MessageCommand<'a> {
 
 #[async_trait]
 impl Command for MessageCommand<'_> {
-    fn construct(_cli: &Cli, data: rmpv::Value) -> Self {
-        Self {
-            message: rmpv::ext::from_value(data)
-                .unwrap_or_else(|e| {
-                    tracing::error!("cannot unpack data for command, {e}");
-                    format!("⚠️**ERROR**⚠️ cannot unpack data for command ```log\n{e}```")
-                })
-                .into(),
-        }
+    fn construct(_cli: &Cli, data: &[u8]) -> FlopResult<Self> {
+        Ok(Self {
+            message: String::from_utf8_lossy(data).into_owned().into(),
+        })
     }
 
     async fn execute(
@@ -32,15 +29,15 @@ impl Command for MessageCommand<'_> {
         Ok(Some(self.message.clone()))
     }
 
-    fn save(self) -> rmpv::Value {
+    fn save(self) -> Vec<u8> {
         match self.message {
-            FlopMessagable::Text(s) => s.into(),
+            FlopMessagable::Text(s) => s.as_bytes().to_vec(),
             _ => {
                 error!(
                     "Not supported value is trying to be seralised: `{:?}`",
                     self.message
                 );
-                rmpv::Value::Nil
+                ERROR_BYTES.to_vec()
             }
         }
     }

@@ -1,10 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
-
-use crate::{
-    command::{Command, MessageCommand},
-    config::Config,
-    Cli,
-};
+use crate::{config::Config, sql::FlopDB, Cli};
 pub use color_eyre::Result as FlopResult;
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use tracing::{debug, error, info};
@@ -12,12 +6,12 @@ use tracing::{debug, error, info};
 const FALLBACK_EMOTE: &str = "⚠";
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct FlopHandler {
     cfg: Config,
     cli: Cli,
     emoji: EmojiCache,
-    // TODO: improve cmd registry
-    commands: HashMap<String, CommandsValue>,
+    data: FlopDB,
 }
 
 #[derive(Debug)]
@@ -26,10 +20,8 @@ struct EmojiCache {
     text: String,
 }
 
-type CommandsValue = Arc<Mutex<dyn Command + Send + Sync>>;
-
 impl FlopHandler {
-    pub fn new(cfg: Config, cli: Cli) -> Self {
+    pub async fn new(cfg: Config, cli: Cli) -> Self {
         // TODO: Move the init stuff to a method taking &mut self
         let emoji = EmojiCache {
             emoji: cfg.emoji.emoji.as_str().try_into().unwrap_or_else(|e| {
@@ -38,20 +30,17 @@ impl FlopHandler {
             }),
             text: fomat_reaction_string(&cfg.emoji.phrase),
         };
-        let mut new = Self {
+        let data = match FlopDB::init(&cli).await {
+            Ok(i) => i,
+            Err(e) => panic!("Error connstructing database: `{e:?}`"),
+        };
+
+        Self {
             cfg,
             cli,
             emoji,
-            commands: HashMap::new(),
-        };
-        new.commands.insert(
-            "halp".to_string(),
-            Arc::new(Mutex::new(MessageCommand::construct(
-                &new.cli,
-                "flop is dead".into(),
-            ))),
-        );
-        new
+            data,
+        }
     }
 
     async fn handle_command(&self, ctx: &Context, msg: Message) {
@@ -64,19 +53,19 @@ impl FlopHandler {
 
             // Get the name of the command to be ran
             let name = &s[self.cfg.prefix.len()..];
-            let cmds = &self.commands;
-            debug!("command {} was called", name);
+            debug!("command {name} was called");
 
             // Find the actual command object and obtain a lock for it
-            let Some(cmd) = cmds.get(name) else {
+            // TODO write a symlink algo
+            let Some(cmd) = self.data.get_command("root".to_owned(), name.to_owned()) else {
                 return;
             };
             let mut cmd = cmd.lock().await;
 
             // Execute the command
-            let result = cmd.execute(&msg, ctx).await;
+            let result = cmd.get_inner().execute(&msg, ctx);
             // Send the result
-            match result {
+            match result.await {
                 Ok(Some(m)) => {
                     if let Err(e) = m.send(&msg, &ctx.http).await {
                         error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
@@ -102,8 +91,8 @@ impl EventHandler for FlopHandler {
                 error!("Error reacting to `{}`:`{e}`", msg.link())
             }
         }
-        // Handle potental command calls.
-        self.handle_command(&ctx, msg).await;
+        // Handle potental command calls
+        self.handle_command(&ctx, msg).await
     }
 
     async fn ready(&self, _: Context, ready: Ready) {

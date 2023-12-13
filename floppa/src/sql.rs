@@ -1,13 +1,12 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use serenity::{futures::TryStreamExt, model::id::UserId};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     FromRow, Pool, Sqlite,
 };
+use tokio::sync::Mutex;
+use tracing::error;
 
 use crate::{
     command::{self, Command},
@@ -26,13 +25,13 @@ impl FlopDB {
         let db_file = cli.get_path("flop.db");
 
         let pool = SqlitePoolOptions::new()
-            .connect(&format!("sqlite://{}", db_file.display()))
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .create_if_missing(true)
+                    .foreign_keys(true)
+                    .filename(db_file),
+            )
             .await?;
-        pool.set_connect_options(
-            SqliteConnectOptions::new()
-                .create_if_missing(true)
-                .foreign_keys(true),
-        );
 
         // Include the table schema from a seperate file
         sqlx::query_file!("assets/schema.sql")
@@ -47,20 +46,25 @@ impl FlopDB {
             // Parse and "transform" the values
             let owner = UserId::from(row.owner as u64);
             let added = row.added.unwrap_or_default() as u64;
-            let data = if let Some(actual) = row.data {
-                rmp_serde::from_slice(&actual)?
-            } else {
-                rmpv::Value::Nil
-            };
-
+            let data = &row.data.unwrap_or_default();
             // TODO maybe move to a seperate class?
             let key = (row.registry.clone(), row.name.clone());
+            let cmd_obj = match command::construct(&row.ty, data, cli) {
+                Ok(cmd) => cmd,
+                Err(e) => {
+                    error!(
+                        "Error constructing command: {} in registry {}\n{e}",
+                        row.name, row.registry
+                    );
+                    continue;
+                }
+            };
 
             let cmd = CommandEntry {
                 id: row.id,
                 name: row.name,
                 owner,
-                inner: command::construct(&row.ty, data, cli),
+                inner: cmd_obj,
                 ty: row.ty,
                 added,
                 registry: row.registry,
@@ -88,6 +92,10 @@ impl FlopDB {
                 .collect(),
         })
     }
+
+    pub fn get_command(&self, registry: String, name: String) -> Option<Arc<Mutex<CommandEntry>>> {
+        self.commands.get(&(registry, name)).cloned()
+    }
 }
 
 #[derive(Debug)]
@@ -99,6 +107,13 @@ pub struct CommandEntry {
     added: u64,
     registry: String,
     inner: Box<dyn Command + Send + Sync>,
+}
+
+impl CommandEntry {
+    /// a helper to execute the inner command
+    pub fn get_inner(&mut self) -> &mut Box<dyn Command + Send + Sync> {
+        &mut self.inner
+    }
 }
 
 #[derive(Debug, FromRow)]

@@ -1,4 +1,6 @@
-
 [workspace]
 members = ["floppa", "messagable"]
 resolver = "2"
+
+[profile.dev.package.backtrace]
+opt-level = 3

@@ -14,7 +14,7 @@ use crate::{Cli, FlopResult};
 #[async_trait]
 pub trait Command: Debug {
     /// Constructs the command from CLI options and config, and any data serialised to disk
-    fn construct(cli: &Cli, data: rmpv::Value) -> Self
+    fn construct(cli: &Cli, data: &[u8]) -> FlopResult<Self>
     where
         Self: Sized;
 
@@ -27,7 +27,7 @@ pub trait Command: Debug {
 
     /// Allows the command to serialise data to be asked
     /// Consumes the command, so it will be reinitalised
-    fn save(self) -> rmpv::Value;
+    fn save(self) -> Vec<u8>;
 
     /// Gets the raw form of the Command
     // TODO: epic macro to sealise src code at compile time

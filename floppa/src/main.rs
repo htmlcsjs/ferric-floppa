@@ -56,7 +56,7 @@ async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
         | GatewayIntents::MESSAGE_CONTENT;
 
     let mut client = Client::builder(&token, intents)
-        .event_handler(FlopHandler::new(cfg, cli))
+        .event_handler(FlopHandler::new(cfg, cli).await)
         .await?;
 
     client.start().await?;
