@@ -38,10 +38,6 @@ impl Command for RedirectMarkerCommand {
             }
         }
     }
-
-    fn raw(&self) -> &str {
-        "TODO"
-    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -70,9 +66,5 @@ impl Command for SubregistyMarkerCommand {
 
     fn save(self) -> Vec<u8> {
         self.registry.into_bytes()
-    }
-
-    fn raw(&self) -> &str {
-        "TODO"
     }
 }

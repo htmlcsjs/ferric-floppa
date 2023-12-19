@@ -42,16 +42,16 @@ impl Command for MessageCommand<'_> {
         }
     }
 
-    fn raw(&self) -> &str {
-        match &self.message {
-            FlopMessagable::Text(s) => s,
-            _ => {
-                error!(
-                    "Not supported value is trying to be seralised: `{:?}`",
-                    self.message
-                );
-                "⚠️**ERROR**⚠️ cannot get raw form of data for command"
-            }
-        }
-    }
+    // fn raw(&self) -> &str {
+    //     match &self.message {
+    //         FlopMessagable::Text(s) => s,
+    //         _ => {
+    //             error!(
+    //                 "Not supported value is trying to be seralised: `{:?}`",
+    //                 self.message
+    //             );
+    //             "⚠️**ERROR**⚠️ cannot get raw form of data for command"
+    //         }
+    //     }
+    // }
 }

@@ -10,11 +10,8 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
     //! Allows for the construction of messages from a value, without having to write
     //! all the boilerplate for message construction.
     //!
-    //! This is automatically implmented for any type that implments [`ToString`],
-    //! sending a message that has the value as its content.
-    //!
     //! It is techincally using the [`async_trait::async_trait`] macro however
-    //! this is not needed in impls due to it being only used on default methods
+    //! this is not needed in implmentations due to it being only used on default methods
     //!
     //! ## Examples
     //!
@@ -28,17 +25,14 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
     //! }
     //!
     //! impl Messagable for MyStruct {
-    //!     fn modify_message<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
+    //!     fn modify_message(&self, builder: CreateMessage) -> CreateMessage {
     //!         builder.content(self.a * self.b)
     //!     }
     //! }
     //! ```
 
     /// Takes a [`CreateMessage`] and adds/changes content to it, finally returning it.
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b>;
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage;
 
     /// Chains together this with another [`Messagable`].
     ///
@@ -52,7 +46,7 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
     /// struct CharReact(char);
     ///
     /// impl Messagable for CharReact {
-    ///     fn modify_message<'a, 'b>(&self, builder: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
+    ///     fn modify_message(&self, builder: CreateMessage) -> CreateMessage {
     ///         builder.reactions([self.0])
     ///     }
     /// }
@@ -72,6 +66,16 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
         }
     }
 
+    /// Applies this to an empty [`CreatMessage`]
+    ///
+    /// Equivalent to `modify_message(CreateMessage::new())`
+    fn apply_default(self) -> CreateMessage
+    where
+        Self: Sized,
+    {
+        self.modify_message(CreateMessage::new())
+    }
+
     /// Replies to a message with this as the message data
     ///
     /// Returns a result with the message or an error
@@ -80,10 +84,10 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
         Self: Sized,
     {
         msg.channel_id
-            .send_message(http, |b| {
-                b.reference_message(msg);
-                self.modify_message(b)
-            })
+            .send_message(
+                http,
+                self.modify_message(CreateMessage::new().reference_message(msg)),
+            )
             .await
     }
 
@@ -94,7 +98,7 @@ pub trait Messagable: std::fmt::Debug + Sync + Send {
     where
         Self: Sized + Send + Sync,
     {
-        channel.send_message(http, |b| self.modify_message(b)).await
+        channel.send_message(http, self.apply_default()).await
     }
 }
 
@@ -116,20 +120,14 @@ where
     T: Messagable,
     U: Messagable,
 {
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         let builder = self.first.modify_message(builder);
         self.second.modify_message(builder)
     }
 }
 
 impl Messagable for CreateEmbed {
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         // could be done better instead of constructing a vec,
         // however it would involve a clone, and this is probally cheaper
         // (its going to get optimised away i bet)
@@ -138,19 +136,13 @@ impl Messagable for CreateEmbed {
 }
 
 impl Messagable for Vec<CreateEmbed> {
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         builder.add_embeds(self)
     }
 }
 
 impl Messagable for String {
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         builder.content(self)
     }
 }

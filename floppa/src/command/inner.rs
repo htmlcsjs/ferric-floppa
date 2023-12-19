@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use messagable::Messagable;
 use serenity::{
     async_trait,
-    builder::{CreateEmbed, CreateMessage},
+    builder::{CreateAllowedMentions, CreateEmbed, CreateMessage},
     http::Http,
     model::prelude::*,
     prelude::*,
@@ -29,9 +29,9 @@ pub trait Command: Debug {
     /// Consumes the command, so it will be reinitalised
     fn save(self) -> Vec<u8>;
 
-    /// Gets the raw form of the Command
+    // Gets the raw form of the Command
     // TODO: epic macro to sealise src code at compile time
-    fn raw(&self) -> &str;
+    //fn raw(&self) -> &str;
 }
 
 /// Enum for return values of [`Command::execute`]
@@ -46,15 +46,12 @@ pub enum FlopMessagable<'a> {
 }
 
 impl Messagable for FlopMessagable<'_> {
-    fn modify_message<'a, 'b>(
-        self,
-        builder: &'a mut CreateMessage<'b>,
-    ) -> &'a mut CreateMessage<'b> {
+    fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         match self {
             FlopMessagable::Text(s) => s.modify_message(builder),
             FlopMessagable::Embeds(e) => e.modify_message(builder),
             FlopMessagable::Response(msg) => builder
-                .allowed_mentions(|x| x.empty_parse().replied_user(false))
+                .allowed_mentions(CreateAllowedMentions::new().replied_user(false))
                 .reference_message(msg),
         }
     }
@@ -65,7 +62,7 @@ impl FlopMessagable<'_> {
         let chain = self.chain(FlopMessagable::Response(msg));
         Ok(msg
             .channel_id
-            .send_message(http, |x| chain.modify_message(x))
+            .send_message(http, chain.apply_default())
             .await?)
     }
 }

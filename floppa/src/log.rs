@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
-use serenity::model::prelude::Embed;
+use serenity::builder::CreateEmbed;
 use tracing::{
     callsite::Identifier,
     field::{Field, Visit},
@@ -70,34 +70,36 @@ where
         }
         description = format!("{message}\n{description}");
 
-        let embed = Embed::fake(|e| {
-            e.description(description)
-                .title(title)
-                .field("Level", format!("`{}`", metadata.level()), true)
-                .field("Name", format!("`{}`", metadata.name()), false)
-                .field("Target", format!("`{}`", metadata.target()), true)
-                .color(colour_from_level(*metadata.level()));
+        let mut embed = CreateEmbed::new()
+            .description(description)
+            .title(title)
+            .field("Level", format!("`{}`", metadata.level()), true)
+            .field("Name", format!("`{}`", metadata.name()), false)
+            .field("Target", format!("`{}`", metadata.target()), true)
+            .color(colour_from_level(*metadata.level()));
 
-            if let Some(path) = metadata.module_path() {
-                e.field("Path", format!("`{path}`"), true);
+        if let Some(path) = metadata.module_path() {
+            embed = embed.field("Path", format!("`{path}`"), true);
+        }
+
+        if let Some(file) = metadata.file() {
+            let mut line_num = "??".to_owned();
+            if let Some(num) = metadata.line() {
+                line_num = num.to_string();
             }
 
-            if let Some(file) = metadata.file() {
-                let mut line_num = "??".to_owned();
-                if let Some(num) = metadata.line() {
-                    line_num = num.to_string();
-                }
+            embed = embed.field("Location", format!("`{file}:{}`", line_num), false);
+        }
 
-                e.field("Location", format!("`{file}:{}`", line_num), false);
-            }
-
-            e
-        });
+        let embed_json = match ureq::serde_json::to_value(embed) {
+            Ok(s) => s,
+            Err(e) => panic!("Error constructing message: {e}"),
+        };
 
         if let Err(e) = ureq::post(&self.webhook).send_json(WebhookMessage {
             content: None,
             attachments: Vec::new(),
-            embeds: vec![embed],
+            embeds: vec![embed_json],
         }) {
             panic!("Error sending message to webhook: {e}");
         }
