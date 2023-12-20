@@ -1,8 +1,8 @@
-use serenity::{async_trait, model::prelude::Message, prelude::*};
+use serenity::{async_trait, model::prelude::Message};
 use tracing::error;
 
 use crate::{
-    command::{Command, FlopMessagable},
+    command::{inner::CmdCtx, Command, FlopMessagable},
     Cli, FlopResult,
 };
 
@@ -21,10 +21,10 @@ impl Command for MessageCommand<'_> {
         })
     }
 
-    async fn execute(
+    async fn execute<'a>(
         &mut self,
         _msg: &Message,
-        _ctx: &Context,
+        _ctx: CmdCtx<'a>,
     ) -> FlopResult<Option<FlopMessagable>> {
         Ok(Some(self.message.clone()))
     }

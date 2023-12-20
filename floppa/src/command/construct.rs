@@ -2,7 +2,7 @@ use tracing::error;
 
 use crate::command::impls::*;
 
-use super::Command;
+use super::ExtendedCommand;
 
 const ERROR_MSG: &[u8] = "⚠️**ERROR**⚠️ Broken Command".as_bytes();
 
@@ -12,17 +12,17 @@ macro_rules! generate_construct {
             ty: &str,
             data: &[u8],
             cli: &$crate::Cli,
-        ) -> color_eyre::Result<Box<dyn Command + Send + Sync>> {
+        ) -> color_eyre::Result<Box<dyn ExtendedCommand + Send + Sync>> {
             Ok(match ty {
                 $(
                     stringify!($cmd) => {
-                        Box::new(<$cmd as Command>::construct(&cli, data)?) as Box<dyn Command + Send + Sync>
+                        Box::new(<$cmd as ExtendedCommand>::construct(&cli, data)?) as Box<dyn ExtendedCommand + Send + Sync>
                     },
                 )+
                 _ => {
                     let msg = format!("{ty} is not a valid command type");
                     error!("{msg}");
-                    Box::new(MessageCommand::construct(&cli, ERROR_MSG)?) as Box<dyn Command + Send + Sync>
+                    Box::new(MessageCommand::construct(&cli, ERROR_MSG)?) as Box<dyn ExtendedCommand + Send + Sync>
                 }
             })
         }
@@ -34,5 +34,6 @@ macro_rules! generate_construct {
 generate_construct!(
     MessageCommand,
     SubregistyMarkerCommand,
-    RedirectMarkerCommand
+    RedirectMarkerCommand,
+    AddCommand
 );

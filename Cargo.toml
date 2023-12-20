@@ -4,3 +4,8 @@ resolver = "2"
 
 [profile.dev.package.backtrace]
 opt-level = 3
+
+[lints.clippy]
+nursery = "warn"
+pedantic = "warn"
+missing_panics_doc = "allow"

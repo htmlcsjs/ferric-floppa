@@ -1,4 +1,4 @@
-use crate::{config::Config, sql::FlopDB, Cli};
+use crate::{command::CmdCtx, config::Config, sql::FlopDB, Cli};
 pub use color_eyre::Result as FlopResult;
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use tracing::{debug, error, info};
@@ -11,7 +11,7 @@ pub struct FlopHandler {
     cfg: Config,
     cli: Cli,
     emoji: EmojiCache,
-    data: FlopDB,
+    data: RwLock<FlopDB>,
 }
 
 #[derive(Debug)]
@@ -39,7 +39,7 @@ impl FlopHandler {
             cfg,
             cli,
             emoji,
-            data,
+            data: RwLock::new(data),
         }
     }
 
@@ -57,13 +57,20 @@ impl FlopHandler {
 
             // Find the actual command object and obtain a lock for it
             // TODO write a symlink algo
-            let Some(cmd) = self.data.get_command("root".to_owned(), name.to_owned()) else {
+            let data_lock = self.data.read().await;
+            let Some(cmd) = data_lock.get_command("root".to_owned(), name.to_owned()) else {
                 return;
             };
             let mut cmd = cmd.lock().await;
+            drop(data_lock);
 
             // Execute the command
-            let result = cmd.get_inner().execute(&msg, ctx);
+            let cmd_ctx = CmdCtx {
+                ctx,
+                command: s,
+                registry: &"root".to_string(),
+            };
+            let result = cmd.get_inner().execute(&msg, cmd_ctx, &self.data);
             // Send the result
             match result.await {
                 Ok(Some(m)) => {

@@ -9,7 +9,7 @@ use serenity::{
     prelude::*,
 };
 
-use crate::{Cli, FlopResult};
+use crate::{sql::FlopDB, Cli, FlopResult};
 
 #[async_trait]
 pub trait Command: Debug {
@@ -19,10 +19,10 @@ pub trait Command: Debug {
         Self: Sized;
 
     /// Executes the command on the given Message event
-    async fn execute(
+    async fn execute<'a>(
         &mut self,
         event: &Message,
-        ctx: &Context,
+        ctx: CmdCtx<'a>,
     ) -> FlopResult<Option<FlopMessagable>>;
 
     /// Allows the command to serialise data to be asked
@@ -32,6 +32,73 @@ pub trait Command: Debug {
     // Gets the raw form of the Command
     // TODO: epic macro to sealise src code at compile time
     //fn raw(&self) -> &str;
+}
+
+#[async_trait]
+/// Extended form of [`Command`] that gives access to more stuff when ran
+pub trait ExtendedCommand: Debug {
+    /// Constructs the command from CLI options and config, and any data serialised to disk
+    fn construct(cli: &Cli, data: &[u8]) -> FlopResult<Self>
+    where
+        Self: Sized;
+
+    /// Executes the command on the given Message event
+    async fn execute<'a>(
+        &mut self,
+        event: &Message,
+        ctx: CmdCtx<'a>,
+        data: &RwLock<FlopDB>,
+    ) -> FlopResult<Option<FlopMessagable>>;
+
+    /// Allows the command to serialise data to be asked
+    /// Consumes the command, so it will be reinitalised
+    fn save(self) -> Vec<u8>;
+
+    // Gets the raw form of the Command
+    // TODO: epic macro to sealise src code at compile time
+    //fn raw(&self) -> &str;
+}
+
+#[async_trait]
+impl<T> ExtendedCommand for T
+where
+    T: Command + Send + Sync,
+{
+    /// Constructs the command from CLI options and config, and any data serialised to disk
+    fn construct(cli: &Cli, data: &[u8]) -> FlopResult<Self>
+    where
+        Self: Sized,
+    {
+        <Self as Command>::construct(cli, data)
+    }
+
+    /// Executes the command on the given Message event
+    async fn execute<'a>(
+        &mut self,
+        event: &Message,
+        ctx: CmdCtx<'a>,
+        _data: &RwLock<FlopDB>,
+    ) -> FlopResult<Option<FlopMessagable>> {
+        <Self as Command>::execute(self, event, ctx).await
+    }
+
+    /// Allows the command to serialise data to be asked
+    /// Consumes the command, so it will be reinitalised
+    fn save(self) -> Vec<u8> {
+        <Self as Command>::save(self)
+    }
+
+    // Gets the raw form of the Command
+    // TODO: epic macro to sealise src code at compile time
+    //fn raw(&self) -> &str;
+}
+
+#[derive(Debug)]
+/// Provided Extra context to commands, like if they were ran under an alias
+pub struct CmdCtx<'a> {
+    pub ctx: &'a Context,
+    pub command: &'a str,
+    pub registry: &'a String,
 }
 
 /// Enum for return values of [`Command::execute`]

@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use tracing::error;
 
 use crate::{
-    command::{self, Command},
+    command::{self, ExtendedCommand},
     Cli, FlopResult,
 };
 
@@ -61,13 +61,14 @@ impl FlopDB {
             };
 
             let cmd = CommandEntry {
-                id: row.id,
+                id: Some(row.id),
                 name: row.name,
                 owner,
                 inner: cmd_obj,
                 ty: row.ty,
                 added,
                 registry: row.registry,
+                dirty: DirtyEnum::Clean,
             };
 
             commands.insert(key, Arc::new(Mutex::new(cmd)));
@@ -96,23 +97,58 @@ impl FlopDB {
     pub fn get_command(&self, registry: String, name: String) -> Option<Arc<Mutex<CommandEntry>>> {
         self.commands.get(&(registry, name)).cloned()
     }
+
+    pub fn add_command(
+        &mut self,
+        registry: String,
+        name: String,
+        owner: impl Into<UserId>,
+        ty: String,
+        cmd: impl ExtendedCommand + Send + Sync + 'static,
+    ) -> Option<Arc<Mutex<CommandEntry>>> {
+        let entry = CommandEntry {
+            id: None,
+            name: name.clone(),
+            owner: owner.into(),
+            ty,
+            added: 0,
+            registry: registry.clone(),
+            inner: Box::new(cmd),
+            dirty: DirtyEnum::New,
+        };
+        self.commands
+            .insert((registry, name), Arc::new(Mutex::new(entry)))
+    }
 }
 
 #[derive(Debug)]
 pub struct CommandEntry {
-    id: i64,
+    id: Option<i64>,
     name: String,
     owner: UserId,
     ty: String,
     added: u64,
     registry: String,
-    inner: Box<dyn Command + Send + Sync>,
+    inner: Box<dyn ExtendedCommand + Send + Sync>,
+    dirty: DirtyEnum,
 }
 
 impl CommandEntry {
     /// a helper to execute the inner command
-    pub fn get_inner(&mut self) -> &mut Box<dyn Command + Send + Sync> {
+    pub fn get_inner(&mut self) -> &mut Box<dyn ExtendedCommand + Send + Sync> {
         &mut self.inner
+    }
+
+    /// Marks a command to be synced to disk on next cycle
+    pub fn mark_dirty(&mut self) {
+        if self.dirty == DirtyEnum::Clean {
+            self.dirty = DirtyEnum::Modified
+        }
+    }
+
+    /// Gets the owner of the command
+    pub fn get_owner(&self) -> &UserId {
+        &self.owner
     }
 }
 
@@ -122,4 +158,15 @@ pub struct RegistryRow {
     name: String,
     #[sqlx(rename = "super")]
     parent: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+/// Enum to show the different states of a command can be in respective of being saved.
+enum DirtyEnum {
+    /// The command is in the exact form as the disk seralised version
+    Clean,
+    /// The command is new and doesnt have an data for it on disk
+    New,
+    /// The command has been modified
+    Modified,
 }

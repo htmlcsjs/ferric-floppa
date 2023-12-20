@@ -1,8 +1,8 @@
-use serenity::{async_trait, model::prelude::Message, prelude::*};
+use serenity::{async_trait, model::prelude::Message};
 use tracing::{error, warn};
 
 use crate::{
-    command::{Command, FlopMessagable},
+    command::{inner::CmdCtx, Command, FlopMessagable},
     Cli, FlopResult,
 };
 
@@ -20,10 +20,10 @@ impl Command for RedirectMarkerCommand {
         Ok(rmp_serde::from_slice(data)?)
     }
 
-    async fn execute(
+    async fn execute<'a>(
         &mut self,
         _msg: &Message,
-        _ctx: &Context,
+        _ctx: CmdCtx<'a>,
     ) -> FlopResult<Option<FlopMessagable>> {
         warn!("Somone has managed to run a marker command");
         Ok(None)
@@ -55,10 +55,10 @@ impl Command for SubregistyMarkerCommand {
         })
     }
 
-    async fn execute(
+    async fn execute<'a>(
         &mut self,
         _msg: &Message,
-        _ctx: &Context,
+        _ctx: CmdCtx<'a>,
     ) -> FlopResult<Option<FlopMessagable>> {
         warn!("Somone has managed to run a marker command");
         Ok(None)
