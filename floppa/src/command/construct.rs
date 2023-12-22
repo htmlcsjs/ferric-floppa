@@ -6,8 +6,20 @@ use super::ExtendedCommand;
 
 const ERROR_MSG: &[u8] = "⚠️**ERROR**⚠️ Broken Command".as_bytes();
 
+macro_rules! generate_array {
+    ($first:tt, $($next:tt),+) => {
+        1 + generate_array!($($next),+)
+    };
+    ($last:tt) => {
+        1
+    }
+}
+
 macro_rules! generate_construct {
     ($($cmd:ty),+) => {
+        /// All the valid command names
+        pub const VALID: [&str; generate_array!($($cmd),+)] = [$(stringify!($cmd)),+];
+        /// Construct a command from a type, binary data and cli arguments
         pub fn construct(
             ty: &str,
             data: &[u8],
@@ -35,5 +47,6 @@ generate_construct!(
     MessageCommand,
     SubregistyMarkerCommand,
     RedirectMarkerCommand,
-    AddCommand
+    AddCommand,
+    InfoCommand
 );

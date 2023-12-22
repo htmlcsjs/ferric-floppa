@@ -19,11 +19,8 @@ pub trait Command: Debug {
         Self: Sized;
 
     /// Executes the command on the given Message event
-    async fn execute<'a>(
-        &mut self,
-        event: &Message,
-        ctx: CmdCtx<'a>,
-    ) -> FlopResult<Option<FlopMessagable>>;
+    async fn execute<'a>(&mut self, event: &Message, ctx: CmdCtx<'a>)
+        -> FlopResult<FlopMessagable>;
 
     /// Allows the command to serialise data to be asked
     /// Consumes the command, so it will be reinitalised
@@ -48,7 +45,7 @@ pub trait ExtendedCommand: Debug {
         event: &Message,
         ctx: CmdCtx<'a>,
         data: &RwLock<FlopDB>,
-    ) -> FlopResult<Option<FlopMessagable>>;
+    ) -> FlopResult<FlopMessagable>;
 
     /// Allows the command to serialise data to be asked
     /// Consumes the command, so it will be reinitalised
@@ -78,7 +75,7 @@ where
         event: &Message,
         ctx: CmdCtx<'a>,
         _data: &RwLock<FlopDB>,
-    ) -> FlopResult<Option<FlopMessagable>> {
+    ) -> FlopResult<FlopMessagable> {
         <Self as Command>::execute(self, event, ctx).await
     }
 
@@ -98,21 +95,26 @@ where
 pub struct CmdCtx<'a> {
     pub ctx: &'a Context,
     pub command: &'a str,
-    pub registry: &'a String,
+    pub registry: &'a str,
+    pub name: &'a str,
+    pub owner: UserId,
+    pub added: i64,
 }
 
 /// Enum for return values of [`Command::execute`]
 #[derive(Debug, Clone)]
-pub enum FlopMessagable<'a> {
+pub enum FlopMessagable {
     /// Sets the message body text
     Text(String),
     /// Sends the list of embeds
     Embeds(Vec<CreateEmbed>),
     /// Stops the response from ping people and replies to the sender
-    Response(&'a Message),
+    Response(MessageReference),
+    /// There should be no reply from the bot
+    None,
 }
 
-impl Messagable for FlopMessagable<'_> {
+impl Messagable for FlopMessagable {
     fn modify_message(self, builder: CreateMessage) -> CreateMessage {
         match self {
             FlopMessagable::Text(s) => s.modify_message(builder),
@@ -120,40 +122,51 @@ impl Messagable for FlopMessagable<'_> {
             FlopMessagable::Response(msg) => builder
                 .allowed_mentions(CreateAllowedMentions::new().replied_user(false))
                 .reference_message(msg),
+            FlopMessagable::None => builder,
         }
     }
 }
 
-impl FlopMessagable<'_> {
+impl FlopMessagable {
     pub async fn send(self, msg: &Message, http: &Http) -> FlopResult<Message> {
-        let chain = self.chain(FlopMessagable::Response(msg));
+        let chain = self.chain(FlopMessagable::Response(msg.into()));
         Ok(msg
             .channel_id
             .send_message(http, chain.apply_default())
             .await?)
     }
+
+    pub const fn is_none(&self) -> bool {
+        matches!(self, FlopMessagable::None)
+    }
 }
 
-impl From<String> for FlopMessagable<'_> {
+impl From<String> for FlopMessagable {
     fn from(value: String) -> Self {
         Self::Text(value)
     }
 }
 
-impl From<CreateEmbed> for FlopMessagable<'_> {
+impl From<CreateEmbed> for FlopMessagable {
     fn from(value: CreateEmbed) -> Self {
         FlopMessagable::Embeds(vec![value])
     }
 }
 
-impl From<Vec<CreateEmbed>> for FlopMessagable<'_> {
+impl From<Vec<CreateEmbed>> for FlopMessagable {
     fn from(value: Vec<CreateEmbed>) -> Self {
         FlopMessagable::Embeds(value)
     }
 }
 
-impl<'a> From<&'a Message> for FlopMessagable<'a> {
-    fn from(value: &'a Message) -> Self {
-        FlopMessagable::Response(value)
+impl From<&Message> for FlopMessagable {
+    fn from(msg: &Message) -> Self {
+        FlopMessagable::Response(msg.into())
     }
+}
+
+const OTHER_CHARS: [char; 2] = ['_', '-'];
+pub fn check_name(name: &str) -> bool {
+    name.chars()
+        .all(|x| x.is_alphanumeric() || OTHER_CHARS.contains(&x))
 }

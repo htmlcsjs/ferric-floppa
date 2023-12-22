@@ -498,6 +498,7 @@ dependencies = [
  "rmp-serde",
  "rmpv",
  "serde",
+ "serde_json",
  "serde_yaml",
  "serenity",
  "sqlx",

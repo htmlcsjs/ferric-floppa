@@ -4,4 +4,4 @@ mod inner;
 
 pub use construct::*;
 pub use impls::*;
-pub use inner::{CmdCtx, Command, ExtendedCommand, FlopMessagable};
+pub use inner::{check_name, CmdCtx, Command, ExtendedCommand, FlopMessagable};

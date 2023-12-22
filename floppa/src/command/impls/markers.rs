@@ -24,9 +24,9 @@ impl Command for RedirectMarkerCommand {
         &mut self,
         _msg: &Message,
         _ctx: CmdCtx<'a>,
-    ) -> FlopResult<Option<FlopMessagable>> {
+    ) -> FlopResult<FlopMessagable> {
         warn!("Somone has managed to run a marker command");
-        Ok(None)
+        Ok(FlopMessagable::None)
     }
 
     fn save(self) -> Vec<u8> {
@@ -59,9 +59,9 @@ impl Command for SubregistyMarkerCommand {
         &mut self,
         _msg: &Message,
         _ctx: CmdCtx<'a>,
-    ) -> FlopResult<Option<FlopMessagable>> {
-        warn!("Somone has managed to run a marker command");
-        Ok(None)
+    ) -> FlopResult<FlopMessagable> {
+        warn!("Someone has managed to run a marker command");
+        Ok(FlopMessagable::None)
     }
 
     fn save(self) -> Vec<u8> {

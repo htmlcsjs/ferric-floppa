@@ -68,23 +68,27 @@ impl FlopHandler {
             let cmd_ctx = CmdCtx {
                 ctx,
                 command: s,
-                registry: &"root".to_string(),
+                registry: "root",
+                name,
+                owner: *cmd.get_owner(),
+                added: cmd.get_added(),
             };
-            let result = cmd.get_inner().execute(&msg, cmd_ctx, &self.data);
+            let result = cmd.get_inner().execute(&msg, cmd_ctx, &self.data).await;
+            // Drop the lock
+            drop(cmd);
             // Send the result
-            match result.await {
-                Ok(Some(m)) => {
-                    if let Err(e) = m.send(&msg, &ctx.http).await {
-                        error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
+            match result {
+                Ok(m) => {
+                    if !m.is_none() {
+                        if let Err(e) = m.send(&msg, &ctx.http).await {
+                            error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
+                        }
                     }
                 }
                 Err(e) => {
                     error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
                 }
-                _ => (),
             }
-            // Drop the lock
-            drop(cmd);
         }
     }
 }

@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use serenity::{futures::TryStreamExt, model::id::UserId};
+use serenity::{
+    futures::TryStreamExt,
+    model::{id::UserId, Timestamp},
+};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     FromRow, Pool, Sqlite,
@@ -45,7 +48,7 @@ impl FlopDB {
             // Get raw data from the row
             // Parse and "transform" the values
             let owner = UserId::from(row.owner as u64);
-            let added = row.added.unwrap_or_default() as u64;
+            let added = row.added.unwrap_or_default();
             let data = &row.data.unwrap_or_default();
             // TODO maybe move to a seperate class?
             let key = (row.registry.clone(), row.name.clone());
@@ -95,7 +98,7 @@ impl FlopDB {
     }
 
     pub fn get_command(&self, registry: String, name: String) -> Option<Arc<Mutex<CommandEntry>>> {
-        self.commands.get(&(registry, name)).cloned()
+        self.commands.get(&(registry, name.to_lowercase())).cloned()
     }
 
     pub fn add_command(
@@ -104,16 +107,16 @@ impl FlopDB {
         name: String,
         owner: impl Into<UserId>,
         ty: String,
-        cmd: impl ExtendedCommand + Send + Sync + 'static,
+        cmd: Box<dyn ExtendedCommand + Send + Sync>,
     ) -> Option<Arc<Mutex<CommandEntry>>> {
         let entry = CommandEntry {
             id: None,
-            name: name.clone(),
+            name: name.clone().to_lowercase(),
             owner: owner.into(),
             ty,
-            added: 0,
+            added: Timestamp::now().unix_timestamp(),
             registry: registry.clone(),
-            inner: Box::new(cmd),
+            inner: cmd,
             dirty: DirtyEnum::New,
         };
         self.commands
@@ -127,7 +130,7 @@ pub struct CommandEntry {
     name: String,
     owner: UserId,
     ty: String,
-    added: u64,
+    added: i64,
     registry: String,
     inner: Box<dyn ExtendedCommand + Send + Sync>,
     dirty: DirtyEnum,
@@ -149,6 +152,26 @@ impl CommandEntry {
     /// Gets the owner of the command
     pub fn get_owner(&self) -> &UserId {
         &self.owner
+    }
+
+    /// Gets the type of the command
+    pub fn get_type(&self) -> &str {
+        &self.ty
+    }
+
+    /// Gets when the command was added, in unix time
+    pub fn get_added(&self) -> i64 {
+        self.added
+    }
+
+    /// Gets the registry the command is in
+    pub fn get_registry(&self) -> &str {
+        &self.registry
+    }
+
+    ///Gets the name of the command
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 }
 

@@ -9,12 +9,12 @@ use crate::{
 const ERROR_BYTES: &[u8] = "⚠️**ERROR**⚠️ Unable to serialise value".as_bytes();
 
 #[derive(Debug)]
-pub struct MessageCommand<'a> {
-    message: FlopMessagable<'a>,
+pub struct MessageCommand {
+    message: FlopMessagable,
 }
 
 #[async_trait]
-impl Command for MessageCommand<'_> {
+impl Command for MessageCommand {
     fn construct(_cli: &Cli, data: &[u8]) -> FlopResult<Self> {
         Ok(Self {
             message: String::from_utf8_lossy(data).into_owned().into(),
@@ -25,8 +25,8 @@ impl Command for MessageCommand<'_> {
         &mut self,
         _msg: &Message,
         _ctx: CmdCtx<'a>,
-    ) -> FlopResult<Option<FlopMessagable>> {
-        Ok(Some(self.message.clone()))
+    ) -> FlopResult<FlopMessagable> {
+        Ok(self.message.clone())
     }
 
     fn save(self) -> Vec<u8> {
