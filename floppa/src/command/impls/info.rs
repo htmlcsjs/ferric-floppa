@@ -57,7 +57,7 @@ impl ExtendedCommand for InfoCommand {
         drop(db_lock);
 
         // Special case this command to not cause a mutex gridlock
-        if ctx.registry == registry && ctx.name == name {
+        if ctx.registry == registry && ctx.name == name.to_lowercase() {
             return Ok(FlopMessagable::Text(format!(
                 "Command `{}` was added at <t:{}:f>, and is owned by {}",
                 ctx.name,

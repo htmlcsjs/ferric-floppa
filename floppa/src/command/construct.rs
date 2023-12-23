@@ -48,5 +48,6 @@ generate_construct!(
     SubregistyMarkerCommand,
     RedirectMarkerCommand,
     AddCommand,
-    InfoCommand
+    InfoCommand,
+    EditCommand
 );

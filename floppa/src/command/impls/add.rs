@@ -44,7 +44,7 @@ impl ExtendedCommand for AddCommand {
 
         // get db log
         let mut lock = db.write().await;
-        if let Some(cmd) = lock.get_command(name.to_string(), ctx.registry.to_string()) {
+        if let Some(cmd) = lock.get_command(ctx.registry.to_string(), name.to_string()) {
             return Ok(FlopMessagable::Text(format!(
                 "⚠️ `{name}` is already a command, owned by {}",
                 cmd.lock().await.get_owner().mention()
