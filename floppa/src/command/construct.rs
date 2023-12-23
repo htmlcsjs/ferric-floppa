@@ -49,5 +49,6 @@ generate_construct!(
     RedirectMarkerCommand,
     AddCommand,
     InfoCommand,
-    EditCommand
+    EditCommand,
+    RemoveCommand
 );

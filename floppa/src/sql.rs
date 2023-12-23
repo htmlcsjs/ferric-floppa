@@ -18,9 +18,14 @@ use crate::{
 
 #[derive(Debug)]
 pub struct FlopDB {
+    /// SQL pool for making db edits with
     pool: Pool<Sqlite>,
+    /// The Core command DB for floppa
     commands: HashMap<(String, String), Arc<Mutex<CommandEntry>>>,
+    /// Map of name to registry data
     registries: HashMap<String, RegistryRow>,
+    /// List of the IDs of commands that have been removed
+    removed_commands: Vec<i64>,
 }
 
 impl FlopDB {
@@ -94,6 +99,7 @@ impl FlopDB {
                 .into_iter()
                 .map(|x| (x.name.clone(), x))
                 .collect(),
+            removed_commands: Vec::new(),
         })
     }
 
@@ -121,6 +127,17 @@ impl FlopDB {
         };
         self.commands
             .insert((registry, name), Arc::new(Mutex::new(entry)))
+    }
+
+    pub async fn remove_command(&mut self, registry: String, name: String) -> bool {
+        if let Some(entry) = self.commands.remove(&(registry, name)) {
+            if let Some(id) = entry.lock().await.id {
+                self.removed_commands.push(id)
+            }
+            true
+        } else {
+            false
+        }
     }
 }
 

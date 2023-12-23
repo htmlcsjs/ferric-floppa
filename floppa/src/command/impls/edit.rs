@@ -30,10 +30,17 @@ impl ExtendedCommand for EditCommand {
         let args = msg.content.trim_start_matches(ctx.command).trim();
         let Some((name, body)) = args.split_once(char::is_whitespace) else {
             return Ok(FlopMessagable::Text(format!(
-                "Usage: `{0} (name) (body)`\nor`{0} (name) (--[type]) [json data]",
+                "Usage: `{} (name) (body)`",
                 ctx.command
             )));
         };
+
+        // Special case this command to not cause a mutex gridlock
+        if ctx.name == name.to_lowercase() {
+            return Ok(FlopMessagable::Text(
+                "Insufficent perms to edit this command".to_owned(),
+            ));
+        }
 
         // get db lock
         let lock = db.write().await;
