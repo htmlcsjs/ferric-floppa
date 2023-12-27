@@ -15,7 +15,7 @@ pub use color_eyre::Result as FlopResult;
 use config::Config;
 use handler::FlopHandler;
 use log::FlopLog;
-use serenity::{model::prelude::*, prelude::*};
+use serenity::{cache::Settings as CacheSettings, model::prelude::*, prelude::*};
 use tokio::{fs, sync::RwLock};
 use tracing::error;
 use tracing_subscriber::prelude::*;
@@ -55,8 +55,13 @@ async fn run(cli: Cli, cfg: Config) -> FlopResult<()> {
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT;
 
+    let mut cache_settings = CacheSettings::default();
+
+    cache_settings.max_messages = cfg.msg_cache;
+
     let mut client = Client::builder(&token, intents)
         .event_handler(FlopHandler::new(cfg, cli).await)
+        .cache_settings(cache_settings)
         .await?;
 
     client.start().await?;

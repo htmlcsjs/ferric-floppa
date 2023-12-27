@@ -7,6 +7,8 @@ use crate::{Cli, FlopResult};
 pub struct Config {
     /// The prefix for commands.
     pub prefix: String,
+    /// The amount of messages to cache per channel
+    pub msg_cache: usize,
     /// See [`LoggingConfig`]
     pub logging: LoggingConfig,
     /// See [`EmojiConfig`]

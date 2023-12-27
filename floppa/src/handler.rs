@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{command::CmdCtx, config::Config, sql::FlopDB, Cli};
 pub use color_eyre::Result as FlopResult;
 use serenity::{async_trait, model::prelude::*, prelude::*};
 use tracing::{debug, error, info};
 
 const FALLBACK_EMOTE: &str = "⚠";
+const RESPONSE_CACHE_SIZE: usize = 512;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -12,6 +15,7 @@ pub struct FlopHandler {
     cli: Cli,
     emoji: EmojiCache,
     data: RwLock<FlopDB>,
+    response_cache: RwLock<HashMap<MessageId, MessageId>>,
 }
 
 #[derive(Debug)]
@@ -30,6 +34,7 @@ impl FlopHandler {
             }),
             text: fomat_reaction_string(&cfg.emoji.phrase),
         };
+
         let data = match FlopDB::init(&cli).await {
             Ok(i) => i,
             Err(e) => panic!("Error connstructing database: `{e:?}`"),
@@ -40,15 +45,17 @@ impl FlopHandler {
             cli,
             emoji,
             data: RwLock::new(data),
+            response_cache: RwLock::new(HashMap::with_capacity(RESPONSE_CACHE_SIZE)),
         }
     }
 
-    async fn handle_command(&self, ctx: &Context, msg: Message) {
+    // Returns the message id of the old response to the message, if there is one
+    async fn handle_command(&self, ctx: &Context, msg: Message) -> Option<MessageId> {
         if !msg.author.bot && msg.content.starts_with(&self.cfg.prefix) {
             // Check if the messages starts with prefix, and if so,
             // get the first "word"
             let Some(s) = msg.content.split_whitespace().next() else {
-                return;
+                return None;
             };
 
             // Get the name of the command to be ran
@@ -59,7 +66,7 @@ impl FlopHandler {
             // TODO write a symlink algo
             let data_lock = self.data.read().await;
             let Some(cmd) = data_lock.get_command("root".to_owned(), name.to_owned()) else {
-                return;
+                return None;
             };
             let mut cmd = cmd.lock().await;
             drop(data_lock);
@@ -80,8 +87,22 @@ impl FlopHandler {
             match result {
                 Ok(m) => {
                     if !m.is_none() {
-                        if let Err(e) = m.send(&msg, &ctx.http).await {
+                        let result = m.send(&msg, &ctx.http).await;
+                        if let Err(e) = result {
                             error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
+                        } else if let Ok(reply) = result {
+                            let mut lock = self.response_cache.write().await;
+                            let old = lock.insert(msg.id, reply.id);
+                            if lock.len() >= RESPONSE_CACHE_SIZE {
+                                let mut keys = lock.keys().cloned().collect::<Vec<_>>();
+                                keys.sort();
+                                keys.into_iter()
+                                    .take(lock.len() - RESPONSE_CACHE_SIZE + 1)
+                                    .for_each(|id| {
+                                        lock.remove(&id);
+                                    })
+                            }
+                            return old;
                         }
                     }
                 }
@@ -90,6 +111,7 @@ impl FlopHandler {
                 }
             }
         }
+        None
     }
 }
 
@@ -103,11 +125,72 @@ impl EventHandler for FlopHandler {
             }
         }
         // Handle potental command calls
-        self.handle_command(&ctx, msg).await
+        self.handle_command(&ctx, msg).await;
+    }
+
+    async fn message_update(
+        &self,
+        ctx: Context,
+        _old: Option<Message>,
+        new: Option<Message>,
+        event: MessageUpdateEvent,
+    ) {
+        debug!("Message updated: {}", event.id);
+
+        // Use the cached message, otherwise fetch the message from discord
+        let msg = if let Some(msg) = new {
+            msg
+        } else {
+            match ctx.http.get_message(event.channel_id, event.id).await {
+                Ok(msg) => msg,
+                Err(e) => {
+                    error!(
+                        "Error deleting message {}```rust\n{e}```",
+                        event.id.link(event.channel_id, event.guild_id)
+                    );
+                    return;
+                }
+            }
+        };
+
+        // Use the normal message handler, just copy pasted (maybe move to fn)
+        if fomat_reaction_string(&msg.content).contains(&self.emoji.text) {
+            let result = msg.react(&ctx.http, self.emoji.emoji.clone()).await;
+            if let Err(e) = result {
+                error!("Error reacting to `{}````rust\n{e}```", msg.link())
+            }
+        }
+        // Handle potental command calls
+        if let Some(id) = self.handle_command(&ctx, msg).await {
+            if let Err(e) = event.channel_id.delete_message(&ctx.http, id).await {
+                error!(
+                    "Error deleting message {}```rust\n{e}```",
+                    id.link(event.channel_id, event.guild_id)
+                )
+            }
+        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
         info!("Connected as {}", ready.user.name);
+    }
+
+    async fn message_delete(
+        &self,
+        ctx: Context,
+        channel_id: ChannelId,
+        deleted_message_id: MessageId,
+        guild_id: Option<GuildId>,
+    ) {
+        let lock = self.response_cache.read().await;
+        if let Some(id) = lock.get(&deleted_message_id) {
+            if let Err(e) = channel_id.delete_message(&ctx.http, id).await {
+                error!(
+                    "Error deleting message {}```rust\n{e}```",
+                    id.link(channel_id, guild_id)
+                )
+            }
+        }
     }
 }
 
