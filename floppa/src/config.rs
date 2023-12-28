@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Cli, FlopResult};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 /// Global config for floppa
 pub struct Config {
     /// The prefix for commands.
@@ -13,6 +13,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     /// See [`EmojiConfig`]
     pub emoji: EmojiConfig,
+    /// How many secons between each cycle of the save function
+    pub save_duration: u64,
 }
 
 impl Config {
@@ -33,7 +35,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 /// Config for printing [`tracing`] logs to a webhook
 pub struct LoggingConfig {
     /// The url of the webhook
@@ -44,7 +46,7 @@ pub struct LoggingConfig {
     pub webhook_level: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 /// config for reacting to messages that contain a phrase
 pub struct EmojiConfig {
     /// The textual representation of the emoji to react with

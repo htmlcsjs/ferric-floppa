@@ -88,7 +88,7 @@ impl ExtendedCommand for RemoveCommand {
         }
     }
 
-    fn save(self) -> Vec<u8> {
-        Vec::new()
+    fn save(&self) -> Option<Vec<u8>> {
+        None
     }
 }

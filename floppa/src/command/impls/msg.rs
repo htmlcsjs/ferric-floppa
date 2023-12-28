@@ -29,15 +29,15 @@ impl Command for MessageCommand {
         Ok(self.message.clone())
     }
 
-    fn save(self) -> Vec<u8> {
-        match self.message {
-            FlopMessagable::Text(s) => s.as_bytes().to_vec(),
+    fn save(&self) -> Option<Vec<u8>> {
+        match &self.message {
+            FlopMessagable::Text(s) => Some(s.as_bytes().to_vec()),
             _ => {
                 error!(
                     "Not supported value is trying to be seralised: `{:?}`",
                     self.message
                 );
-                ERROR_BYTES.to_vec()
+                Some(ERROR_BYTES.to_vec())
             }
         }
     }

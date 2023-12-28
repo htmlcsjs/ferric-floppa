@@ -24,7 +24,7 @@ pub trait Command: Debug {
 
     /// Allows the command to serialise data to be asked
     /// Consumes the command, so it will be reinitalised
-    fn save(self) -> Vec<u8>;
+    fn save(&self) -> Option<Vec<u8>>;
 
     // Gets the raw form of the Command
     // TODO: epic macro to sealise src code at compile time
@@ -48,8 +48,7 @@ pub trait ExtendedCommand: Debug {
     ) -> FlopResult<FlopMessagable>;
 
     /// Allows the command to serialise data to be asked
-    /// Consumes the command, so it will be reinitalised
-    fn save(self) -> Vec<u8>;
+    fn save(&self) -> Option<Vec<u8>>;
 
     // Gets the raw form of the Command
     // TODO: epic macro to sealise src code at compile time
@@ -80,8 +79,7 @@ where
     }
 
     /// Allows the command to serialise data to be asked
-    /// Consumes the command, so it will be reinitalised
-    fn save(self) -> Vec<u8> {
+    fn save(&self) -> Option<Vec<u8>> {
         <Self as Command>::save(self)
     }
 

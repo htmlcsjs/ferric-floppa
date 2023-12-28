@@ -28,3 +28,4 @@ rmp-serde = "1.1.2"
 rmpv = { version = "1.0.1", features = ["with-serde"] }
 messagable = { path = "../messagable" }
 sqlx = { version = "0.7.2", features = ["runtime-tokio", "sqlite"] }
+ctrlc = { version = "3", features = ["termination"] }

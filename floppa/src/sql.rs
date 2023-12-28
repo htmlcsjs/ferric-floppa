@@ -1,5 +1,7 @@
-#![allow(dead_code)]
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use serenity::{
     futures::TryStreamExt,
@@ -9,8 +11,8 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     FromRow, Pool, Sqlite,
 };
-use tokio::sync::Mutex;
-use tracing::error;
+use tokio::{sync::Mutex, time::Instant};
+use tracing::{error, info};
 
 use crate::{
     command::{self, ExtendedCommand},
@@ -21,8 +23,10 @@ use crate::{
 pub struct FlopDB {
     /// SQL pool for making db edits with
     pool: Pool<Sqlite>,
-    /// The Core command DB for floppa
+    /// The core command DB for floppa
     commands: HashMap<(String, String), Arc<Mutex<CommandEntry>>>,
+    /// list of all commands that are dirty and need to be synced
+    dirty_commands: HashSet<(String, String)>,
     /// Map of name to registry data
     registries: HashMap<String, RegistryRow>,
     /// List of the IDs of commands that have been removed
@@ -77,7 +81,6 @@ impl FlopDB {
                 ty: row.ty,
                 added,
                 registry: row.registry,
-                dirty: DirtyEnum::Clean,
             };
 
             commands.insert(key, Arc::new(Mutex::new(cmd)));
@@ -101,6 +104,7 @@ impl FlopDB {
                 .map(|x| (x.name.clone(), x))
                 .collect(),
             removed_commands: Vec::new(),
+            dirty_commands: HashSet::new(),
         })
     }
 
@@ -116,16 +120,17 @@ impl FlopDB {
         ty: String,
         cmd: Box<dyn ExtendedCommand + Send + Sync>,
     ) -> Option<Arc<Mutex<CommandEntry>>> {
+        let name = name.to_lowercase();
         let entry = CommandEntry {
             id: None,
-            name: name.clone().to_lowercase(),
+            name: name.clone(),
             owner: owner.into(),
             ty,
             added: Timestamp::now().unix_timestamp(),
             registry: registry.clone(),
             inner: cmd,
-            dirty: DirtyEnum::New,
         };
+        self.dirty_commands.insert((registry.clone(), name.clone()));
         self.commands
             .insert((registry, name), Arc::new(Mutex::new(entry)))
     }
@@ -140,6 +145,122 @@ impl FlopDB {
             false
         }
     }
+
+    pub async fn sync(&self, dirty: HashSet<(String, String)>, delete: Vec<i64>) -> FlopResult<()> {
+        if dirty.is_empty() && delete.is_empty() {
+            // No point doing all of this if there is nothing to act on
+            info!("Nothing to sync");
+            return Ok(());
+        }
+        let start = Instant::now();
+        // Start a transaction
+        let mut tx = self.pool.begin().await?;
+
+        // every command to be synced
+        for key in dirty {
+            let Some(cmd) = self.commands.get(&key) else {
+                continue;
+            };
+
+            // Get a lock on the command
+            let mut cmd_lock = cmd.lock().await;
+
+            if let Some(id) = cmd_lock.id {
+                // If the command was editied (previously had an id)
+
+                // Process and get data
+                let reg_id = self.registries.get(&cmd_lock.registry).map_or(1, |x| x.id);
+                let data = cmd_lock.inner.save();
+                let owner = cmd_lock.owner.get() as i64;
+                // Construct the actual query
+                let res = sqlx::query_file!(
+                    "assets/update_command.sql",
+                    cmd_lock.name,
+                    owner,
+                    cmd_lock.ty,
+                    reg_id,
+                    data,
+                    id
+                )
+                .execute(&mut *tx)
+                .await;
+                // Handle Error
+                if let Err(e) = res {
+                    error!(
+                        "Error saving command {}:{}```rust\n{e}```",
+                        cmd_lock.registry, cmd_lock.name
+                    )
+                }
+            } else {
+                // If the command doesnt have an id (is new)
+
+                // Process data
+                let reg_id = self.registries.get(&cmd_lock.registry).map_or(1, |x| x.id);
+                let data = cmd_lock.inner.save();
+                let owner = cmd_lock.owner.get() as i64;
+                // Construct the query
+                let res = sqlx::query_file!(
+                    "assets/add_command.sql",
+                    cmd_lock.name,
+                    owner,
+                    cmd_lock.ty,
+                    reg_id,
+                    cmd_lock.added,
+                    data,
+                )
+                .fetch_one(&mut *tx)
+                .await;
+                // Update the command entry with the id
+                match res {
+                    Ok(id) => cmd_lock.id = Some(id.id),
+                    Err(e) => error!(
+                        "Error saving command {}:{}```rust\n{e}```",
+                        cmd_lock.registry, cmd_lock.name
+                    ),
+                }
+            }
+        }
+
+        // For commands to be deleted
+        for id in delete {
+            // Construct the query
+            let res = sqlx::query!("DELETE FROM commands WHERE id = ?;", id)
+                .execute(&mut *tx)
+                .await;
+            // handle errors
+            if let Err(e) = res {
+                error!("Error deleting command {id}```rust\n{e}```");
+            }
+        }
+
+        // Commit the changes to the DB
+        tx.commit().await?;
+
+        // Write info out
+        info!("Synced to DB in {:?}", start.elapsed());
+
+        Ok(())
+    }
+
+    /// Marks a command to be synced on next cycle
+    pub fn mark_dirty(&mut self, registry: String, name: String) {
+        self.dirty_commands.insert((registry, name));
+    }
+
+    /// Drains all of the dirty commands out of cache
+    #[must_use]
+    pub fn drain_dirty(&mut self) -> HashSet<(String, String)> {
+        let ret = self.dirty_commands.clone();
+        self.dirty_commands.clear();
+        ret
+    }
+
+    /// Drains all of the dirty commands out of cache
+    pub fn drain_removed(&mut self) -> Vec<i64> {
+        let ret = self.removed_commands.clone();
+        self.removed_commands.clear();
+        ret
+    }
 }
 
 #[derive(Debug)]
@@ -151,20 +272,12 @@ pub struct CommandEntry {
     added: i64,
     registry: String,
     inner: Box<dyn ExtendedCommand + Send + Sync>,
-    dirty: DirtyEnum,
 }
 
 impl CommandEntry {
     /// a helper to execute the inner command
     pub fn get_inner(&mut self) -> &mut Box<dyn ExtendedCommand + Send + Sync> {
         &mut self.inner
-    }
-
-    /// Marks a command to be synced to disk on next cycle
-    pub fn mark_dirty(&mut self) {
-        if self.dirty == DirtyEnum::Clean {
-            self.dirty = DirtyEnum::Modified
-        }
     }
 
     /// Gets the owner of the command
@@ -199,15 +312,4 @@ pub struct RegistryRow {
     name: String,
     #[sqlx(rename = "super")]
     parent: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-/// Enum to show the different states of a command can be in respective of being saved.
-enum DirtyEnum {
-    /// The command is in the exact form as the disk seralised version
-    Clean,
-    /// The command is new and doesnt have an data for it on disk
-    New,
-    /// The command has been modified
-    Modified,
 }

@@ -126,7 +126,7 @@ impl ExtendedCommand for AddCommand {
         Ok(FlopMessagable::Text(format!("Added command `{name}`")))
     }
 
-    fn save(self) -> Vec<u8> {
-        Vec::new()
+    fn save(&self) -> Option<Vec<u8>> {
+        None
     }
 }

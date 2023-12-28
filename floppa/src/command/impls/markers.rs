@@ -29,12 +29,12 @@ impl Command for RedirectMarkerCommand {
         Ok(FlopMessagable::None)
     }
 
-    fn save(self) -> Vec<u8> {
+    fn save(&self) -> Option<Vec<u8>> {
         match rmp_serde::to_vec_named(&self) {
-            Ok(data) => data,
+            Ok(data) => Some(data),
             Err(e) => {
                 error!("Failed to serialise symlink data {e}");
-                vec![]
+                None
             }
         }
     }
@@ -64,7 +64,7 @@ impl Command for SubregistyMarkerCommand {
         Ok(FlopMessagable::None)
     }
 
-    fn save(self) -> Vec<u8> {
-        self.registry.into_bytes()
+    fn save(&self) -> Option<Vec<u8>> {
+        Some(self.registry.as_bytes().to_vec())
     }
 }

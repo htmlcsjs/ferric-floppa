@@ -43,11 +43,10 @@ impl ExtendedCommand for EditCommand {
         }
 
         // get db lock
-        let lock = db.write().await;
-        let Some(cmd) = lock.get_command(ctx.registry.to_string(), name.to_string()) else {
+        let mut db_lock = db.write().await;
+        let Some(cmd) = db_lock.get_command(ctx.registry.to_string(), name.to_string()) else {
             return Ok(FlopMessagable::Text(format!("⚠️ `{name}` is not a command")));
         };
-        drop(lock);
 
         // Check if the command is owned by the person executing the command
         let mut cmd_lock = cmd.lock().await;
@@ -76,15 +75,19 @@ impl ExtendedCommand for EditCommand {
         };
 
         *cmd_lock.get_inner() = Box::new(new_cmd);
-        cmd_lock.mark_dirty();
+        db_lock.mark_dirty(
+            cmd_lock.get_registry().to_owned(),
+            cmd_lock.get_name().to_owned(),
+        );
 
-        // Drop command lock
+        // Drop locks
         drop(cmd_lock);
+        drop(db_lock);
 
         Ok(FlopMessagable::Text(format!("Edited command `{name}`")))
     }
 
-    fn save(self) -> Vec<u8> {
-        Vec::new()
+    fn save(&self) -> Option<Vec<u8>> {
+        None
     }
 }

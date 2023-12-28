@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{command::CmdCtx, config::Config, sql::FlopDB, Cli};
 pub use color_eyre::Result as FlopResult;
 use serenity::{async_trait, model::prelude::*, prelude::*};
+use tokio::time;
 use tracing::{debug, error, info};
 
 const FALLBACK_EMOTE: &str = "⚠";
@@ -14,7 +15,7 @@ pub struct FlopHandler {
     cfg: Config,
     cli: Cli,
     emoji: EmojiCache,
-    data: RwLock<FlopDB>,
+    data: Arc<RwLock<FlopDB>>,
     response_cache: RwLock<HashMap<MessageId, MessageId>>,
 }
 
@@ -25,6 +26,10 @@ struct EmojiCache {
 }
 
 impl FlopHandler {
+    pub fn get_db(&self) -> Arc<RwLock<FlopDB>> {
+        self.data.clone()
+    }
+
     pub async fn new(cfg: Config, cli: Cli) -> Self {
         // TODO: Move the init stuff to a method taking &mut self
         let emoji = EmojiCache {
@@ -35,16 +40,16 @@ impl FlopHandler {
             text: fomat_reaction_string(&cfg.emoji.phrase),
         };
 
-        let data = match FlopDB::init(&cli).await {
+        let data = Arc::new(RwLock::new(match FlopDB::init(&cli).await {
             Ok(i) => i,
             Err(e) => panic!("Error connstructing database: `{e:?}`"),
-        };
+        }));
 
         Self {
             cfg,
             cli,
             emoji,
-            data: RwLock::new(data),
+            data,
             response_cache: RwLock::new(HashMap::with_capacity(RESPONSE_CACHE_SIZE)),
         }
     }
@@ -199,4 +204,30 @@ fn fomat_reaction_string(text: &str) -> String {
     let mut chars: Vec<char> = text.chars().filter(|x| !x.is_whitespace()).collect();
     chars.dedup();
     chars.into_iter().collect()
+}
+
+/// Function to sync db consistantly
+pub async fn db_sync_loop(duration: u64, data: Arc<RwLock<FlopDB>>) {
+    let mut interval = time::interval(Duration::from_secs(duration));
+    debug!("Started save loop");
+    loop {
+        interval.tick().await;
+
+        db_sync(data.clone()).await;
+    }
+}
+
+pub async fn db_sync(data: Arc<RwLock<FlopDB>>) {
+    // Get and drain the dirty commands
+    let mut lock = data.write().await;
+    let dirty = lock.drain_dirty();
+    let removed = lock.drain_removed();
+    // Drop lock to free db to be used for other purposes
+    drop(lock);
+
+    // Get a read lock, as we dont need to write any data for this potentally long running function
+    let lock = data.read().await;
+    if let Err(e) = lock.sync(dirty, removed).await {
+        error!("Error syncing to disk```rust\n{e}```");
+    }
 }
