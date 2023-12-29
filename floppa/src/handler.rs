@@ -1,13 +1,20 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use crate::{command::CmdCtx, config::Config, sql::FlopDB, Cli};
+use crate::{
+    command::{CmdCtx, FlopMessagable},
+    config::Config,
+    sql::{CanonicalisedStatus, CmdNode, FlopDB},
+    Cli,
+};
 pub use color_eyre::Result as FlopResult;
-use serenity::{async_trait, model::prelude::*, prelude::*};
+use messagable::Messagable;
+use serenity::{async_trait, http::Http, model::prelude::*, prelude::*};
 use tokio::time;
 use tracing::{debug, error, info};
 
 const FALLBACK_EMOTE: &str = "⚠";
 const RESPONSE_CACHE_SIZE: usize = 512;
+const ROOT_REGISTRY: &str = "root";
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -56,65 +63,150 @@ impl FlopHandler {
 
     // Returns the message id of the old response to the message, if there is one
     async fn handle_command(&self, ctx: &Context, msg: Message) -> Option<MessageId> {
+        // Check if the messages starts with prefix
         if !msg.author.bot && msg.content.starts_with(&self.cfg.prefix) {
-            // Check if the messages starts with prefix, and if so,
-            // get the first "word"
-            let Some(s) = msg.content.split_whitespace().next() else {
-                return None;
-            };
-
             // Get the name of the command to be ran
-            let name = &s[self.cfg.prefix.len()..];
+            let name = &msg.content[self.cfg.prefix.len()..];
             debug!("command {name} was called");
 
             // Find the actual command object and obtain a lock for it
             // TODO write a symlink algo
             let data_lock = self.data.read().await;
-            let Some(cmd) = data_lock.get_command("root".to_owned(), name.to_owned()) else {
+            let canonicalised = data_lock
+                .canonicalise_command(ROOT_REGISTRY.to_owned(), name.to_owned())
+                .await;
+
+            // Deal with the output of the canonicalisation
+            match canonicalised.status {
+                CanonicalisedStatus::Success => (),
+                CanonicalisedStatus::Overflow => {
+                    return self
+                        .process_messageable(
+                            &msg,
+                            FlopMessagable::Text(
+                                "This command is nested too deep to be run".to_string(),
+                            ),
+                            &ctx.http,
+                        )
+                        .await
+                }
+                CanonicalisedStatus::NotFound => {
+                    if let Some((registry, name)) = canonicalised.stack.last() {
+                        return self
+                            .process_messageable(
+                                &msg,
+                                FlopMessagable::Text(format!(
+                                    "Cannot find command {registry}:{name}"
+                                )),
+                                &ctx.http,
+                            )
+                            .await;
+                    }
+                }
+                CanonicalisedStatus::Recursive => {
+                    let chain = canonicalised
+                        .stack
+                        .iter()
+                        .map(|(r, n)| format!("`{r}:{n}`"))
+                        .fold(String::new(), |mut l, r| {
+                            l.reserve(r.len() + 4);
+                            l.push_str(&r);
+                            l.push_str(" -> ");
+                            l
+                        });
+                    return self
+                        .process_messageable(
+                            &msg,
+                            FlopMessagable::Text(format!("Recursive loop:\n{chain}")),
+                            &ctx.http,
+                        )
+                        .await;
+                }
+                CanonicalisedStatus::FailedSubcommand => {
+                    return self
+                        .process_messageable(
+                            &msg,
+                            FlopMessagable::Text(format!(
+                                "{0}{1} is a registry, usage `{0}{1} [command name]`",
+                                self.cfg.prefix.len(),
+                                canonicalised.call
+                            )),
+                            &ctx.http,
+                        )
+                        .await
+                }
+            }
+
+            let (registry, name) = canonicalised
+                .stack
+                .last()
+                .map(|x| x.to_owned())
+                .unwrap_or((String::new(), String::new()));
+
+            let Some(entry) = data_lock.get_command(registry.clone(), name.clone()) else {
+                error!("Somehow got no responce from a canonicalisaion");
                 return None;
             };
-            let mut cmd = cmd.lock().await;
+            let mut entry = entry.lock().await;
             drop(data_lock);
 
             // Execute the command
             let cmd_ctx = CmdCtx {
                 ctx,
-                command: s,
-                registry: "root",
-                name,
-                owner: *cmd.get_owner(),
-                added: cmd.get_added(),
+                command: &canonicalised.call,
+                registry: &registry,
+                name: &name,
+                owner: *entry.get_owner(),
+                added: entry.get_added(),
             };
-            let result = cmd.get_inner().execute(&msg, cmd_ctx, &self.data).await;
+            let node = entry.get_node();
+
+            let CmdNode::Cmd(cmd) = node else {
+                error!("Expected a command, not a `{node:?}`!");
+                return None;
+            };
+
+            let result = cmd.execute(&msg, cmd_ctx, &self.data).await;
             // Drop the lock
-            drop(cmd);
+            drop(entry);
             // Send the result
             match result {
                 Ok(m) => {
                     if !m.is_none() {
-                        let result = m.send(&msg, &ctx.http).await;
-                        if let Err(e) = result {
-                            error!("Error sending ${name} @ `{}`:```rust\n{e}```", msg.link())
-                        } else if let Ok(reply) = result {
-                            let mut lock = self.response_cache.write().await;
-                            let old = lock.insert(msg.id, reply.id);
-                            if lock.len() >= RESPONSE_CACHE_SIZE {
-                                let mut keys = lock.keys().cloned().collect::<Vec<_>>();
-                                keys.sort();
-                                keys.into_iter()
-                                    .take(lock.len() - RESPONSE_CACHE_SIZE + 1)
-                                    .for_each(|id| {
-                                        lock.remove(&id);
-                                    })
-                            }
-                            return old;
-                        }
+                        return self.process_messageable(&msg, m, &ctx.http).await;
                     }
                 }
                 Err(e) => {
                     error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
                 }
             }
+        }
+        None
+    }
+
+    /// Adds a replyed message to the cache
+    async fn process_messageable(
+        &self,
+        source: &Message,
+        messagble: FlopMessagable,
+        http: &Http,
+    ) -> Option<MessageId> {
+        let result = messagble.send(source, http).await;
+        if let Err(e) = result {
+            error!("Error sending reply @ `{}`:```rust\n{e}```", source.link())
+        } else if let Ok(reply) = result {
+            let mut lock = self.response_cache.write().await;
+            let old = lock.insert(source.id, reply.id);
+            if lock.len() >= RESPONSE_CACHE_SIZE {
+                let mut keys = lock.keys().cloned().collect::<Vec<_>>();
+                keys.sort();
+                keys.into_iter()
+                    .take(lock.len() - RESPONSE_CACHE_SIZE + 1)
+                    .for_each(|id| {
+                        lock.remove(&id);
+                    })
+            }
+            return old;
         }
         None
     }

@@ -19,6 +19,8 @@ use crate::{
     Cli, FlopResult,
 };
 
+const COMMAND_SEARCH_DEPTH_LIMIT: usize = 64;
+
 #[derive(Debug)]
 pub struct FlopDB {
     /// SQL pool for making db edits with
@@ -77,7 +79,7 @@ impl FlopDB {
                 id: Some(row.id),
                 name: row.name,
                 owner,
-                inner: cmd_obj,
+                node: cmd_obj.into(),
                 ty: row.ty,
                 added,
                 registry: row.registry,
@@ -118,7 +120,7 @@ impl FlopDB {
         name: String,
         owner: impl Into<UserId>,
         ty: String,
-        cmd: Box<dyn ExtendedCommand + Send + Sync>,
+        cmd: CmdNode,
     ) -> Option<Arc<Mutex<CommandEntry>>> {
         let name = name.to_lowercase();
         let entry = CommandEntry {
@@ -128,7 +130,7 @@ impl FlopDB {
             ty,
             added: Timestamp::now().unix_timestamp(),
             registry: registry.clone(),
-            inner: cmd,
+            node: cmd,
         };
         self.dirty_commands.insert((registry.clone(), name.clone()));
         self.commands
@@ -170,7 +172,7 @@ impl FlopDB {
 
                 // Process and get data
                 let reg_id = self.registries.get(&cmd_lock.registry).map_or(1, |x| x.id);
-                let data = cmd_lock.inner.save();
+                let data = cmd_lock.node.save();
                 let owner = cmd_lock.owner.get() as i64;
                 // Construct the actual query
                 let res = sqlx::query_file!(
@@ -196,7 +198,7 @@ impl FlopDB {
 
                 // Process data
                 let reg_id = self.registries.get(&cmd_lock.registry).map_or(1, |x| x.id);
-                let data = cmd_lock.inner.save();
+                let data = cmd_lock.node.save();
                 let owner = cmd_lock.owner.get() as i64;
                 // Construct the query
                 let res = sqlx::query_file!(
@@ -261,6 +263,89 @@ impl FlopDB {
         self.removed_commands.clear();
         ret
     }
+
+    /// Function to follow symlink/subregistries to find the actual command to call
+    pub async fn canonicalise_command(
+        &self,
+        mut registry: String,
+        name: String,
+    ) -> CanonicalsedResult {
+        let mut result = CanonicalsedResult::default();
+        let mut words = name.split_whitespace();
+        let Some(mut search_name) = words.next().map(|x| x.to_owned()) else {
+            return result;
+        };
+        result.stack.push((registry.clone(), search_name.clone()));
+
+        for _ in 0..COMMAND_SEARCH_DEPTH_LIMIT {
+            let Some(cmd) = self.get_command(registry.clone(), search_name.clone()) else {
+                return result;
+            };
+            let mut cmd_lock = cmd.lock().await;
+            let node = cmd_lock.get_node();
+
+            match node {
+                CmdNode::Cmd(_) => {
+                    result.call += " ";
+                    result.call += &search_name;
+                    result.call = result.call.trim().to_owned();
+                    result.status = CanonicalisedStatus::Success;
+                    return result;
+                }
+                CmdNode::Subregistry(reg) => {
+                    registry = reg.to_owned();
+                    result.call += " ";
+                    result.call += &search_name;
+                    result.call = result.call.trim().to_owned();
+                    if let Some(name) = words.next() {
+                        search_name = name.to_owned()
+                    } else {
+                        result.status = CanonicalisedStatus::FailedSubcommand;
+                        return result;
+                    };
+                }
+                CmdNode::Symlink { reg, name } => {
+                    registry = reg.to_owned();
+                    search_name = name.to_owned();
+                }
+            }
+            let new_val = (registry.clone(), search_name.clone());
+            if result.stack.contains(&new_val) {
+                result.stack.push(new_val);
+                result.status = CanonicalisedStatus::Recursive;
+                return result;
+            } else {
+                result.stack.push(new_val);
+            }
+        }
+        result.status = CanonicalisedStatus::Overflow;
+        result
+    }
+}
+#[derive(Debug, Default)]
+/// The result from [`canonicalise_command`]
+pub struct CanonicalsedResult {
+    /// The stack of all command names searched
+    pub stack: Vec<(String, String)>,
+    /// What the end call of the command was
+    pub call: String,
+    /// Why it was exited
+    pub status: CanonicalisedStatus,
+}
+
+#[derive(Debug, PartialEq, Eq, Default)]
+pub enum CanonicalisedStatus {
+    /// The loop was terminated due to depth issues
+    Overflow,
+    /// The command was successfully found
+    Success,
+    /// The command was not found
+    #[default]
+    NotFound,
+    /// The search entered a recursive loop
+    Recursive,
+    /// The registry failed to get a command to search
+    FailedSubcommand,
 }
 
 #[derive(Debug)]
@@ -271,13 +356,13 @@ pub struct CommandEntry {
     ty: String,
     added: i64,
     registry: String,
-    inner: Box<dyn ExtendedCommand + Send + Sync>,
+    node: CmdNode,
 }
 
 impl CommandEntry {
     /// a helper to execute the inner command
-    pub fn get_inner(&mut self) -> &mut Box<dyn ExtendedCommand + Send + Sync> {
-        &mut self.inner
+    pub fn get_node(&mut self) -> &mut CmdNode {
+        &mut self.node
     }
 
     /// Gets the owner of the command
@@ -303,6 +388,32 @@ impl CommandEntry {
     ///Gets the name of the command
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+}
+
+#[derive(Debug)]
+/// The actual type of the command node
+pub enum CmdNode {
+    /// An actual command that can be executed
+    Cmd(Box<dyn ExtendedCommand + Send + Sync>),
+    /// A seperate subregistry
+    Subregistry(String),
+    /// A symlink to anothe command
+    Symlink { reg: String, name: String },
+}
+
+impl CmdNode {
+    pub fn save(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::Cmd(cmd) => cmd.save(),
+            _ => None,
+        }
+    }
+}
+
+impl From<Box<dyn ExtendedCommand + Send + Sync>> for CmdNode {
+    fn from(value: Box<dyn ExtendedCommand + Send + Sync>) -> Self {
+        Self::Cmd(value)
     }
 }
 

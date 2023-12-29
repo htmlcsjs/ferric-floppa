@@ -91,11 +91,17 @@ where
 #[derive(Debug)]
 /// Provided Extra context to commands, like if they were ran under an alias
 pub struct CmdCtx<'a> {
+    /// Serenity contex
     pub ctx: &'a Context,
+    /// The name/alias used to call the command
     pub command: &'a str,
+    /// The commands actual registry
     pub registry: &'a str,
+    /// The commands canonical name
     pub name: &'a str,
+    /// The owner of the command
     pub owner: UserId,
+    /// When the command was added
     pub added: i64,
 }
 

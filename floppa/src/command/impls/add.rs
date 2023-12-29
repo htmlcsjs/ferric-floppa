@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     command::{check_name, construct, inner::CmdCtx, ExtendedCommand, FlopMessagable, VALID},
-    sql::FlopDB,
+    sql::{CmdNode, FlopDB},
     Cli, FlopResult,
 };
 
@@ -100,7 +100,7 @@ impl ExtendedCommand for AddCommand {
                 name.to_string(),
                 &msg.author,
                 ty.to_owned(),
-                cmd,
+                cmd.into(),
             );
         } else {
             let cmd = match MessageCommand::construct(&self.cli, body.as_bytes()) {
@@ -117,7 +117,7 @@ impl ExtendedCommand for AddCommand {
                 name.to_string(),
                 &msg.author,
                 "MessageCommand".to_owned(),
-                Box::new(cmd),
+                CmdNode::Cmd(Box::new(cmd)),
             );
         }
 

@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     command::{inner::CmdCtx, ExtendedCommand, FlopMessagable},
-    sql::FlopDB,
+    sql::{CmdNode, FlopDB},
     Cli, FlopResult,
 };
 
@@ -74,7 +74,7 @@ impl ExtendedCommand for EditCommand {
             }
         };
 
-        *cmd_lock.get_inner() = Box::new(new_cmd);
+        *cmd_lock.get_node() = CmdNode::Cmd(Box::new(new_cmd));
         db_lock.mark_dirty(
             cmd_lock.get_registry().to_owned(),
             cmd_lock.get_name().to_owned(),
