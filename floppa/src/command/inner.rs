@@ -115,7 +115,7 @@ pub enum FlopMessagable {
     /// Stops the response from ping people and replies to the sender
     Response(MessageReference),
     /// There should be no reply from the bot
-    None,
+    _None,
 }
 
 impl Messagable for FlopMessagable {
@@ -126,7 +126,7 @@ impl Messagable for FlopMessagable {
             FlopMessagable::Response(msg) => builder
                 .allowed_mentions(CreateAllowedMentions::new().replied_user(false))
                 .reference_message(msg),
-            FlopMessagable::None => builder,
+            FlopMessagable::_None => builder,
         }
     }
 }
@@ -141,7 +141,7 @@ impl FlopMessagable {
     }
 
     pub const fn is_none(&self) -> bool {
-        matches!(self, FlopMessagable::None)
+        matches!(self, FlopMessagable::_None)
     }
 }
 

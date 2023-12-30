@@ -64,7 +64,7 @@ impl FlopDB {
             let data = &row.data.unwrap_or_default();
             // TODO maybe move to a seperate class?
             let key = (row.registry.clone(), row.name.clone());
-            let cmd_obj = match command::construct(&row.ty, data, cli) {
+            let cmd_obj = match CmdNode::load(&row.ty, data, cli) {
                 Ok(cmd) => cmd,
                 Err(e) => {
                     error!(
@@ -79,7 +79,7 @@ impl FlopDB {
                 id: Some(row.id),
                 name: row.name,
                 owner,
-                node: cmd_obj.into(),
+                node: cmd_obj,
                 ty: row.ty,
                 added,
                 registry: row.registry,
@@ -278,36 +278,42 @@ impl FlopDB {
         result.stack.push((registry.clone(), search_name.clone()));
 
         for _ in 0..COMMAND_SEARCH_DEPTH_LIMIT {
-            let Some(cmd) = self.get_command(registry.clone(), search_name.clone()) else {
-                return result;
-            };
-            let mut cmd_lock = cmd.lock().await;
-            let node = cmd_lock.get_node();
-
-            match node {
-                CmdNode::Cmd(_) => {
-                    result.call += " ";
-                    result.call += &search_name;
-                    result.call = result.call.trim().to_owned();
-                    result.status = CanonicalisedStatus::Success;
+            if let Some(cmd) = self.get_command(registry.clone(), search_name.clone()) {
+                let mut cmd_lock = cmd.lock().await;
+                let node = cmd_lock.get_node();
+                match node {
+                    CmdNode::Cmd(_) => {
+                        result.call += " ";
+                        result.call += &search_name;
+                        result.call = result.call.trim().to_owned();
+                        result.status = CanonicalisedStatus::Success;
+                        return result;
+                    }
+                    CmdNode::Subregistry(reg) => {
+                        registry = reg.to_owned();
+                        result.call += " ";
+                        result.call += &search_name;
+                        result.call = result.call.trim().to_owned();
+                        if let Some(name) = words.next() {
+                            search_name = name.to_owned()
+                        } else {
+                            result.status = CanonicalisedStatus::FailedSubcommand;
+                            return result;
+                        };
+                    }
+                    CmdNode::Symlink { reg, name } => {
+                        registry = reg.to_owned();
+                        search_name = name.to_owned();
+                    }
+                }
+            } else if let Some(reg_entry) = self.registries.get(&registry) {
+                if let Some(parent) = &reg_entry.parent {
+                    registry = parent.to_owned()
+                } else {
                     return result;
                 }
-                CmdNode::Subregistry(reg) => {
-                    registry = reg.to_owned();
-                    result.call += " ";
-                    result.call += &search_name;
-                    result.call = result.call.trim().to_owned();
-                    if let Some(name) = words.next() {
-                        search_name = name.to_owned()
-                    } else {
-                        result.status = CanonicalisedStatus::FailedSubcommand;
-                        return result;
-                    };
-                }
-                CmdNode::Symlink { reg, name } => {
-                    registry = reg.to_owned();
-                    search_name = name.to_owned();
-                }
+            } else {
+                return result;
             }
             let new_val = (registry.clone(), search_name.clone());
             if result.stack.contains(&new_val) {
@@ -320,6 +326,11 @@ impl FlopDB {
         }
         result.status = CanonicalisedStatus::Overflow;
         result
+    }
+
+    /// Checks if a command exists
+    pub fn command_exists(&self, registry: String, name: &str) -> bool {
+        self.commands.contains_key(&(registry, name.to_lowercase()))
     }
 }
 #[derive(Debug, Default)]
@@ -403,12 +414,38 @@ pub enum CmdNode {
 }
 
 impl CmdNode {
+    pub const SUBREG_ID: &'static str = "Subregistry";
+    pub const SYMLINK_ID: &'static str = "Symlink";
+
     pub fn save(&self) -> Option<Vec<u8>> {
         match self {
             Self::Cmd(cmd) => cmd.save(),
-            _ => None,
+            Self::Subregistry(reg) => Some(reg.clone().into_bytes()),
+            Self::Symlink { reg, name } => {
+                Some(rmp_serde::to_vec(&(reg, name)).unwrap_or_default())
+            }
         }
     }
+
+    pub fn load(ty: &str, data: &[u8], cli: &Cli) -> FlopResult<Self> {
+        Ok(match ty {
+            Self::SUBREG_ID => Self::Subregistry(String::from_utf8(data.to_vec())?),
+            Self::SYMLINK_ID => {
+                let data: SymlinkData = rmp_serde::from_slice(data)?;
+                Self::Symlink {
+                    reg: data.registry,
+                    name: data.name,
+                }
+            }
+            _ => Self::Cmd(command::construct(ty, data, cli)?),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct SymlinkData {
+    registry: String,
+    name: String,
 }
 
 impl From<Box<dyn ExtendedCommand + Send + Sync>> for CmdNode {

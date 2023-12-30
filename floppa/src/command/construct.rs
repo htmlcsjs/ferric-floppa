@@ -45,10 +45,9 @@ macro_rules! generate_construct {
 // also maybe name commands better
 generate_construct!(
     MessageCommand,
-    SubregistyMarkerCommand,
-    RedirectMarkerCommand,
     AddCommand,
     InfoCommand,
     EditCommand,
-    RemoveCommand
+    RemoveCommand,
+    LinkCommand
 );

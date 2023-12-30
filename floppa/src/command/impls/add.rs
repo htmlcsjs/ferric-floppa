@@ -30,10 +30,14 @@ impl ExtendedCommand for AddCommand {
         let args = msg.content.trim_start_matches(ctx.command).trim();
         let Some((name, body)) = args.split_once(char::is_whitespace) else {
             return Ok(FlopMessagable::Text(format!(
-                "Usage: `{0} (name) (body)`\nor`{0} (name) (--[type]) [json data]",
+                "Usage: `{0} (name) (body)`\nor`{0} (name) (--[type]) [json data]`",
                 ctx.command
             )));
         };
+
+        dbg!(&name);
+        dbg!(&body);
+        dbg!(&ctx);
 
         // check invalid names
         if !check_name(name) {
@@ -103,6 +107,11 @@ impl ExtendedCommand for AddCommand {
                 cmd.into(),
             );
         } else {
+            if body.is_empty() {
+                return Ok(FlopMessagable::Text(
+                    "Command body cannot be empty".to_string(),
+                ));
+            }
             let cmd = match MessageCommand::construct(&self.cli, body.as_bytes()) {
                 Ok(cmd) => cmd,
                 Err(e) => {

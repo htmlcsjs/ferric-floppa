@@ -7,7 +7,6 @@ use crate::{
     Cli,
 };
 pub use color_eyre::Result as FlopResult;
-use messagable::Messagable;
 use serenity::{async_trait, http::Http, model::prelude::*, prelude::*};
 use tokio::time;
 use tracing::{debug, error, info};
@@ -91,16 +90,18 @@ impl FlopHandler {
                         .await
                 }
                 CanonicalisedStatus::NotFound => {
-                    if let Some((registry, name)) = canonicalised.stack.last() {
-                        return self
-                            .process_messageable(
-                                &msg,
-                                FlopMessagable::Text(format!(
-                                    "Cannot find command {registry}:{name}"
-                                )),
-                                &ctx.http,
-                            )
-                            .await;
+                    if canonicalised.stack.len() > 1 {
+                        if let Some((registry, name)) = canonicalised.stack.last() {
+                            return self
+                                .process_messageable(
+                                    &msg,
+                                    FlopMessagable::Text(format!(
+                                        "Cannot find command {registry}:{name}"
+                                    )),
+                                    &ctx.http,
+                                )
+                                .await;
+                        }
                     }
                 }
                 CanonicalisedStatus::Recursive => {
@@ -153,7 +154,7 @@ impl FlopHandler {
             // Execute the command
             let cmd_ctx = CmdCtx {
                 ctx,
-                command: &canonicalised.call,
+                command: &(self.cfg.prefix.clone() + &canonicalised.call),
                 registry: &registry,
                 name: &name,
                 owner: *entry.get_owner(),
