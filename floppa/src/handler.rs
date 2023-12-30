@@ -69,7 +69,6 @@ impl FlopHandler {
             debug!("command {name} was called");
 
             // Find the actual command object and obtain a lock for it
-            // TODO write a symlink algo
             let data_lock = self.data.read().await;
             let canonicalised = data_lock
                 .canonicalise_command(ROOT_REGISTRY.to_owned(), name.to_owned())
