@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     command::{check_name, inner::CmdCtx, ExtendedCommand, FlopMessagable},
-    sql::{CmdNode, FlopDB},
+    sql::{CmdNode, FlopDB, FlopRole},
     Cli, FlopResult,
 };
 
@@ -49,6 +49,9 @@ impl ExtendedCommand for LinkCommand {
 
         // get db log
         let mut lock = db.write().await;
+        if !lock.user_has_role(msg.author.id, &FlopRole::RegAdd(ctx.registry.to_owned())) {
+            return Ok(FlopMessagable::Text(":clueless:".to_string()));
+        }
         if let Some(cmd) = lock.get_command(ctx.registry.to_string(), name.to_string()) {
             return Ok(FlopMessagable::Text(format!(
                 "⚠️ `{name}` is already a command, owned by {}",

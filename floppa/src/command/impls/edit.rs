@@ -20,7 +20,6 @@ impl ExtendedCommand for EditCommand {
         Ok(Self { cli: cli.clone() })
     }
 
-    // TODO: roles
     async fn execute<'b>(
         &mut self,
         msg: &Message,

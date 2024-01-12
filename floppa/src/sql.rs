@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use serde::{Deserialize, Serialize};
 use serenity::{
     futures::TryStreamExt,
     model::{id::UserId, Timestamp},
@@ -12,7 +13,7 @@ use sqlx::{
     FromRow, Pool, Sqlite,
 };
 use tokio::{sync::Mutex, time::Instant};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     command::{self, ExtendedCommand},
@@ -33,6 +34,8 @@ pub struct FlopDB {
     registries: HashMap<String, RegistryRow>,
     /// List of the IDs of commands that have been removed
     removed_commands: Vec<i64>,
+    /// List of users with roles
+    user_roles: HashMap<UserId, (Vec<FlopRole>, bool)>,
 }
 
 impl FlopDB {
@@ -98,6 +101,24 @@ impl FlopDB {
         .fetch_all(&pool)
         .await?;
 
+        let roles = sqlx::query!("SELECT id, roles FROM users;")
+            .fetch_all(&pool)
+            .await?;
+        let mut user_roles = HashMap::with_capacity(roles.len());
+        for user in roles {
+            let Some(role_data) = user.roles else {
+                continue;
+            };
+            let roles: Vec<FlopRole> = match rmp_serde::from_slice(&role_data) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Error decoding roles for <@{}>\n{e}", user.id);
+                    continue;
+                }
+            };
+            user_roles.insert(UserId::from(user.id as u64), (roles, false));
+        }
+
         Ok(Self {
             pool,
             commands,
@@ -107,6 +128,7 @@ impl FlopDB {
                 .collect(),
             removed_commands: Vec::new(),
             dirty_commands: HashSet::new(),
+            user_roles,
         })
     }
 
@@ -332,6 +354,28 @@ impl FlopDB {
     pub fn command_exists(&self, registry: String, name: &str) -> bool {
         self.commands.contains_key(&(registry, name.to_lowercase()))
     }
+
+    /// Check if a user has a role, or a valid parent
+    pub fn user_has_role(&self, user: UserId, role: &FlopRole) -> bool {
+        if let Some((roles, _)) = self.user_roles.get(&user) {
+            // Specal case banned users
+            if roles.contains(&FlopRole::Banned) {
+                return false;
+            }
+            let mut role_found = roles.contains(role);
+            while !role_found {
+                let parent = role.get_parent();
+                if let Some(role) = parent {
+                    role_found = roles.contains(&role)
+                } else {
+                    return role_found;
+                }
+            }
+            role_found
+        } else {
+            false
+        }
+    }
 }
 #[derive(Debug, Default)]
 /// The result from [`canonicalise_command`]
@@ -460,4 +504,32 @@ pub struct RegistryRow {
     name: String,
     #[sqlx(rename = "super")]
     parent: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[non_exhaustive]
+pub enum FlopRole {
+    /// The user effectivly can do anything
+    Admin,
+    /// The user can moderate a registry
+    /// i.e. (delete commands, change command owners)
+    RegMod(String),
+    /// The user can add a command to a registry
+    RegAdd(String),
+    /// The user can moderate all the registries
+    GlobalMod,
+    /// The user is banned from using commands or adding to public registries
+    Banned,
+}
+
+impl FlopRole {
+    pub fn get_parent(&self) -> Option<FlopRole> {
+        match self {
+            Self::Admin => None,
+            Self::RegMod(_) => Some(Self::GlobalMod),
+            Self::RegAdd(s) => Some(Self::RegAdd(s.clone())),
+            Self::GlobalMod => Some(Self::Admin),
+            Self::Banned => None,
+        }
+    }
 }

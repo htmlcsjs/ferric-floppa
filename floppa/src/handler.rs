@@ -6,7 +6,6 @@ use crate::{
     sql::{CanonicalisedStatus, CmdNode, FlopDB},
     Cli,
 };
-pub use color_eyre::Result as FlopResult;
 use serenity::{async_trait, http::Http, model::prelude::*, prelude::*};
 use tokio::time;
 use tracing::{debug, error, info};
@@ -62,123 +61,125 @@ impl FlopHandler {
 
     // Returns the message id of the old response to the message, if there is one
     async fn handle_command(&self, ctx: &Context, msg: Message) -> Option<MessageId> {
-        // Check if the messages starts with prefix
-        if !msg.author.bot && msg.content.starts_with(&self.cfg.prefix) {
-            // Get the name of the command to be ran
-            let name = &msg.content[self.cfg.prefix.len()..];
-            debug!("command {name} was called");
+        // Check if the messages starts with prefix and the user isnt a bot
+        if msg.author.bot || !msg.content.starts_with(&self.cfg.prefix) {
+            return None;
+        }
+        // Get the name of the command to be ran
+        let name = &msg.content[self.cfg.prefix.len()..];
+        debug!("command {name} was called");
 
-            // Find the actual command object and obtain a lock for it
-            let data_lock = self.data.read().await;
-            let canonicalised = data_lock
-                .canonicalise_command(ROOT_REGISTRY.to_owned(), name.to_owned())
-                .await;
+        // Find the actual command object and obtain a lock for it
+        let data_lock = self.data.read().await;
+        let canonicalised = data_lock
+            .canonicalise_command(ROOT_REGISTRY.to_owned(), name.to_owned())
+            .await;
 
-            // Deal with the output of the canonicalisation
-            match canonicalised.status {
-                CanonicalisedStatus::Success => (),
-                CanonicalisedStatus::Overflow => {
-                    return self
-                        .process_messageable(
-                            &msg,
-                            FlopMessagable::Text(
-                                "This command is nested too deep to be run".to_string(),
-                            ),
-                            &ctx.http,
-                        )
-                        .await
-                }
-                CanonicalisedStatus::NotFound => {
-                    if canonicalised.stack.len() > 1 {
-                        if let Some((registry, name)) = canonicalised.stack.last() {
-                            return self
-                                .process_messageable(
-                                    &msg,
-                                    FlopMessagable::Text(format!(
-                                        "Cannot find command {registry}:{name}"
-                                    )),
-                                    &ctx.http,
-                                )
-                                .await;
-                        }
+        // Deal with the output of the canonicalisation
+        // I'm sorry for this code
+        match canonicalised.status {
+            CanonicalisedStatus::Success => (),
+            CanonicalisedStatus::Overflow => {
+                return self
+                    .process_messageable(
+                        &msg,
+                        FlopMessagable::Text(
+                            "This command is nested too deep to be run".to_string(),
+                        ),
+                        &ctx.http,
+                    )
+                    .await
+            }
+            CanonicalisedStatus::NotFound => {
+                if canonicalised.stack.len() > 1 {
+                    if let Some((registry, name)) = canonicalised.stack.last() {
+                        return self
+                            .process_messageable(
+                                &msg,
+                                FlopMessagable::Text(format!(
+                                    "Cannot find command {registry}:{name}"
+                                )),
+                                &ctx.http,
+                            )
+                            .await;
                     }
-                }
-                CanonicalisedStatus::Recursive => {
-                    let chain = canonicalised
-                        .stack
-                        .iter()
-                        .map(|(r, n)| format!("`{r}:{n}`"))
-                        .fold(String::new(), |mut l, r| {
-                            l.reserve(r.len() + 4);
-                            l.push_str(&r);
-                            l.push_str(" -> ");
-                            l
-                        });
-                    return self
-                        .process_messageable(
-                            &msg,
-                            FlopMessagable::Text(format!("Recursive loop:\n{chain}")),
-                            &ctx.http,
-                        )
-                        .await;
-                }
-                CanonicalisedStatus::FailedSubcommand => {
-                    return self
-                        .process_messageable(
-                            &msg,
-                            FlopMessagable::Text(format!(
-                                "{0}{1} is a registry, usage `{0}{1} [command name]`",
-                                self.cfg.prefix.len(),
-                                canonicalised.call
-                            )),
-                            &ctx.http,
-                        )
-                        .await
                 }
             }
+            CanonicalisedStatus::Recursive => {
+                let chain = canonicalised
+                    .stack
+                    .iter()
+                    .map(|(r, n)| format!("`{r}:{n}`"))
+                    .fold(String::new(), |mut l, r| {
+                        l.reserve(r.len() + 4);
+                        l.push_str(&r);
+                        l.push_str(" -> ");
+                        l
+                    });
+                return self
+                    .process_messageable(
+                        &msg,
+                        FlopMessagable::Text(format!("Recursive loop:\n{chain}")),
+                        &ctx.http,
+                    )
+                    .await;
+            }
+            CanonicalisedStatus::FailedSubcommand => {
+                return self
+                    .process_messageable(
+                        &msg,
+                        FlopMessagable::Text(format!(
+                            "{0}{1} is a registry, usage `{0}{1} [command name]`",
+                            self.cfg.prefix.len(),
+                            canonicalised.call
+                        )),
+                        &ctx.http,
+                    )
+                    .await
+            }
+        }
 
-            let (registry, name) = canonicalised
-                .stack
-                .last()
-                .map(|x| x.to_owned())
-                .unwrap_or((String::new(), String::new()));
+        let (registry, name) = canonicalised
+            .stack
+            .last()
+            .map(|x| x.to_owned())
+            .unwrap_or((String::new(), String::new()));
 
-            let Some(entry) = data_lock.get_command(registry.clone(), name.clone()) else {
-                error!("Somehow got no responce from a canonicalisaion");
-                return None;
-            };
-            let mut entry = entry.lock().await;
-            drop(data_lock);
+        let Some(entry) = data_lock.get_command(registry.clone(), name.clone()) else {
+            error!("Somehow got no response from a canonicalisaion");
+            return None;
+        };
+        let mut entry = entry.lock().await;
+        drop(data_lock);
 
-            // Execute the command
-            let cmd_ctx = CmdCtx {
-                ctx,
-                command: &(self.cfg.prefix.clone() + &canonicalised.call),
-                registry: &registry,
-                name: &name,
-                owner: *entry.get_owner(),
-                added: entry.get_added(),
-            };
-            let node = entry.get_node();
+        // Execute the command
+        let cmd_ctx = CmdCtx {
+            ctx,
+            command: &(self.cfg.prefix.clone() + &canonicalised.call),
+            registry: &registry,
+            name: &name,
+            owner: *entry.get_owner(),
+            added: entry.get_added(),
+        };
+        let node = entry.get_node();
 
-            let CmdNode::Cmd(cmd) = node else {
-                error!("Expected a command, not a `{node:?}`!");
-                return None;
-            };
+        let CmdNode::Cmd(cmd) = node else {
+            error!("Expected a command, not a `{node:?}`!");
+            return None;
+        };
 
-            let result = cmd.execute(&msg, cmd_ctx, &self.data).await;
-            // Drop the lock
-            drop(entry);
-            // Send the result
-            match result {
-                Ok(m) => {
-                    if !m.is_none() {
-                        return self.process_messageable(&msg, m, &ctx.http).await;
-                    }
+        let result = cmd.execute(&msg, cmd_ctx, &self.data).await;
+        // Drop the lock
+        drop(entry);
+        // Send the result
+        match result {
+            Ok(m) => {
+                if !m.is_none() {
+                    return self.process_messageable(&msg, m, &ctx.http).await;
                 }
-                Err(e) => {
-                    error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
-                }
+            }
+            Err(e) => {
+                error!("Error running ${name} @ `{}`:```rust\n{e}```", msg.link())
             }
         }
         None

@@ -13,3 +13,7 @@ CREATE TABLE IF NOT EXISTS commands(
     data      BLOB     NULL,
     FOREIGN KEY(registry) REFERENCES registries(id)
 );
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY,
+    roles BLOB NULL --msgpack array of roles
+);

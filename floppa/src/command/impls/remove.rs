@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     command::{inner::CmdCtx, ExtendedCommand, FlopMessagable},
-    sql::FlopDB,
+    sql::{FlopDB, FlopRole},
     Cli, FlopResult,
 };
 
@@ -60,19 +60,21 @@ impl ExtendedCommand for RemoveCommand {
             )));
         };
 
-        // Drop lock to free db for other uses
-        drop(db_lock);
-
-        // Check cmd owner
+        // Check perms
+        // Command can be deleted by the owner or the a RegMod
         let cmd_lock = cmd.lock().await;
-        if cmd_lock.get_owner() != &msg.author.id {
+        if cmd_lock.get_owner() != &msg.author.id
+            && !db_lock.user_has_role(msg.author.id, &FlopRole::RegMod(ctx.registry.to_owned()))
+        {
             return Ok(FlopMessagable::Text(format!(
                 "⚠️ Cannot remove command, `{name}` is owned by {}",
                 cmd.lock().await.get_owner().mention()
             )));
         }
         // Drop lock on cmd to be able to delete it
+        // Drop lock to free db for other uses
         drop(cmd_lock);
+        drop(db_lock);
 
         // Perform the command deletion
         let mut db_lock = db.write().await;

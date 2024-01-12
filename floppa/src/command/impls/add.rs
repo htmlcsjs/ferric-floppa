@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     command::{check_name, construct, inner::CmdCtx, ExtendedCommand, FlopMessagable, VALID},
-    sql::{CmdNode, FlopDB},
+    sql::{CmdNode, FlopDB, FlopRole},
     Cli, FlopResult,
 };
 
@@ -20,7 +20,6 @@ impl ExtendedCommand for AddCommand {
         Ok(Self { cli: cli.clone() })
     }
 
-    // TODO: roles
     async fn execute<'b>(
         &mut self,
         msg: &Message,
@@ -53,6 +52,9 @@ impl ExtendedCommand for AddCommand {
 
         // deal with other command types
         if body.starts_with("--[") {
+            if !lock.user_has_role(msg.author.id, &FlopRole::RegMod(ctx.registry.to_owned())) {
+                return Ok(FlopMessagable::Text(":clueless:".to_string()));
+            }
             let (ty, body) = match body.split_once(char::is_whitespace) {
                 Some((ty, body)) => (&ty.trim()[..(ty.len() - 2)][3..], body),
                 None => (&body.trim()[..(body.len() - 1)][3..], ""),
@@ -103,6 +105,10 @@ impl ExtendedCommand for AddCommand {
                 cmd.into(),
             );
         } else {
+            if !lock.user_has_role(msg.author.id, &FlopRole::RegAdd(ctx.registry.to_owned())) {
+                return Ok(FlopMessagable::Text(":clueless:".to_string()));
+            }
+
             if body.is_empty() {
                 return Ok(FlopMessagable::Text(
                     "Command body cannot be empty".to_string(),
