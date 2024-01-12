@@ -35,10 +35,6 @@ impl ExtendedCommand for AddCommand {
             )));
         };
 
-        dbg!(&name);
-        dbg!(&body);
-        dbg!(&ctx);
-
         // check invalid names
         if !check_name(name) {
             return Ok(FlopMessagable::Text(
