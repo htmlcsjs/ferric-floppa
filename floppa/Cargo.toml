@@ -17,6 +17,7 @@ serenity = { version = "0.12", default-features = false, features = [
     "rustls_backend",
     "model",
     "cache",
+    "utils",
 ] }
 tracing-subscriber = "0.3"
 tracing = "0.1"

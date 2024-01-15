@@ -3,6 +3,7 @@ pub mod config;
 mod handler;
 mod log;
 mod sql;
+mod stuff;
 
 use std::{
     path::{Path, PathBuf},

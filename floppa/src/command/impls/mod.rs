@@ -4,6 +4,7 @@ mod info;
 mod link;
 mod msg;
 mod remove;
+mod role;
 
 pub use add::AddCommand;
 pub use edit::EditCommand;

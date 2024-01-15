@@ -35,7 +35,7 @@ pub struct FlopDB {
     /// List of the IDs of commands that have been removed
     removed_commands: Vec<i64>,
     /// List of users with roles
-    user_roles: HashMap<UserId, (Vec<FlopRole>, bool)>,
+    user_roles: HashMap<UserId, (Vec<FlopRole>, SyncState)>,
 }
 
 impl FlopDB {
@@ -116,7 +116,7 @@ impl FlopDB {
                     continue;
                 }
             };
-            user_roles.insert(UserId::from(user.id as u64), (roles, false));
+            user_roles.insert(UserId::from(user.id as u64), (roles, SyncState::Clean));
         }
 
         Ok(Self {
@@ -376,6 +376,24 @@ impl FlopDB {
             false
         }
     }
+
+    /// Give a user a role
+    pub fn give_role(&mut self, user: UserId, role: FlopRole) {
+        let Some(inner) = self.user_roles.get_mut(&user) else {
+            self.user_roles.insert(user, (vec![role], SyncState::New));
+            return;
+        };
+
+        let roles = &mut inner.0;
+        inner.1 = SyncState::Dirty;
+
+        // Check if the user is banned, if so they dont get a role
+        if roles.contains(&FlopRole::Banned) {
+            *roles = vec![FlopRole::Banned]
+        } else {
+            roles.push(role);
+        }
+    }
 }
 #[derive(Debug, Default)]
 /// The result from [`canonicalise_command`]
@@ -532,4 +550,43 @@ impl FlopRole {
             Self::Banned => None,
         }
     }
+
+    pub fn from_str(txt: &str) -> Option<FlopRole> {
+        let ilovetheborrowchecker = txt.to_lowercase();
+        let lower = &ilovetheborrowchecker;
+        if lower == "admin" {
+            Some(Self::Admin)
+        } else if lower == "globalmod" {
+            Some(Self::GlobalMod)
+        } else if lower == "banned" {
+            Some(Self::Banned)
+        } else {
+            let Some((name, arg)) = lower
+                .split_once('(')
+                .map(|(a, x)| (a, x.trim_end_matches(')')))
+            else {
+                return None;
+            };
+
+            if name == "regmod" {
+                Some(Self::RegMod(arg.to_string()))
+            } else if name == "regadd" {
+                Some(Self::RegAdd(arg.to_string()))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// An enum to represent the state somthing is regarding being synced
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+pub enum SyncState {
+    /// Changed
+    Dirty,
+    /// New item
+    #[default]
+    New,
+    /// No change
+    Clean,
 }
