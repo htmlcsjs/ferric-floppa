@@ -170,7 +170,12 @@ impl FlopDB {
         }
     }
 
-    pub async fn sync(&self, dirty: HashSet<(String, String)>, delete: Vec<i64>) -> FlopResult<()> {
+    pub async fn sync(
+        &self,
+        dirty: HashSet<(String, String)>,
+        delete: Vec<i64>,
+        roles: Vec<(UserId, SyncState)>,
+    ) -> FlopResult<()> {
         if dirty.is_empty() && delete.is_empty() {
             // No point doing all of this if there is nothing to act on
             info!("Nothing to sync");
@@ -257,6 +262,48 @@ impl FlopDB {
             }
         }
 
+        // Sync roles
+        for (user, state) in roles {
+            match state {
+                SyncState::Dirty => {
+                    let Some((roles, _)) = self.user_roles.get(&user) else {
+                        continue;
+                    };
+                    let data = rmp_serde::to_vec(roles)?;
+                    let id = user.get() as i64;
+                    let res = sqlx::query!("UPDATE users SET roles = ? WHERE id = ?;", data, id)
+                        .execute(&mut *tx)
+                        .await;
+                    if let Err(e) = res {
+                        error!("Error modifying user roles{id}```rust\n{e}```");
+                    }
+                }
+                SyncState::New => {
+                    let Some((roles, _)) = self.user_roles.get(&user) else {
+                        continue;
+                    };
+                    let data = rmp_serde::to_vec(roles)?;
+                    let id = user.get() as i64;
+                    let res = sqlx::query!("INSERT INTO users(id, roles) VALUES(?, ?);", id, data)
+                        .execute(&mut *tx)
+                        .await;
+                    if let Err(e) = res {
+                        error!("Error adding user roles{id}```rust\n{e}```");
+                    }
+                }
+                SyncState::Clean => (),
+                SyncState::Deleted => {
+                    let id = user.get() as i64;
+                    let res = sqlx::query!("DELETE FROM users WHERE id = ?;", id)
+                        .execute(&mut *tx)
+                        .await;
+                    if let Err(e) = res {
+                        error!("Error deleting user roles{id}```rust\n{e}```");
+                    }
+                }
+            }
+        }
+
         // Commit the changes to the DB
         tx.commit().await?;
 
@@ -280,9 +327,30 @@ impl FlopDB {
     }
 
     /// Drains all of the dirty commands out of cache
+    #[must_use]
     pub fn drain_removed(&mut self) -> Vec<i64> {
         let ret = self.removed_commands.clone();
         self.removed_commands.clear();
+        ret
+    }
+
+    /// Drains all of the dirty commands out of cache
+    #[must_use]
+    pub fn drain_roles(&mut self) -> Vec<(UserId, SyncState)> {
+        let ret = self
+            .user_roles
+            .iter()
+            .filter(|(_, (_, state))| *state != SyncState::Clean)
+            .map(|(id, (_, state))| (*id, *state))
+            .collect();
+
+        self.user_roles
+            .retain(|_, (_, state)| *state != SyncState::Deleted);
+
+        self.user_roles
+            .values_mut()
+            .for_each(|(_, status)| *status = SyncState::Clean);
+
         ret
     }
 
@@ -357,7 +425,12 @@ impl FlopDB {
 
     /// Check if a user has a role, or a valid parent
     pub fn user_has_role(&self, user: UserId, role: &FlopRole) -> bool {
-        if let Some((roles, _)) = self.user_roles.get(&user) {
+        if let Some((roles, sync)) = self.user_roles.get(&user) {
+            // Dont check roles that have been "deleted"
+            if *sync == SyncState::Deleted {
+                return false;
+            }
+
             // Specal case banned users
             if roles.contains(&FlopRole::Banned) {
                 return false;
@@ -589,4 +662,6 @@ pub enum SyncState {
     New,
     /// No change
     Clean,
+    /// To be deleted
+    Deleted,
 }

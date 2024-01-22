@@ -315,12 +315,13 @@ pub async fn db_sync(data: Arc<RwLock<FlopDB>>) {
     let mut lock = data.write().await;
     let dirty = lock.drain_dirty();
     let removed = lock.drain_removed();
+    let roles = lock.drain_roles();
     // Drop lock to free db to be used for other purposes
     drop(lock);
 
     // Get a read lock, as we dont need to write any data for this potentally long running function
     let lock = data.read().await;
-    if let Err(e) = lock.sync(dirty, removed).await {
+    if let Err(e) = lock.sync(dirty, removed, roles).await {
         error!("Error syncing to disk```rust\n{e}```");
     }
 }
