@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use crate::{
     command::{CmdCtx, FlopMessagable},
     config::Config,
+    log,
     sql::{CanonicalisedStatus, CmdNode, FlopDB},
     Cli,
 };
@@ -271,6 +272,27 @@ impl EventHandler for FlopHandler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         info!("Connected as {}", ready.user.name);
+    }
+
+    async fn guild_create(&self, _: Context, guild: Guild, _: Option<bool>) {
+        log::send_msg(
+            format!("Joined guild:`{}`, id `{}`", guild.name, guild.id),
+            &self.cfg.logging.webhook_url,
+        );
+    }
+
+    async fn guild_delete(&self, _: Context, event: UnavailableGuild, guild: Option<Guild>) {
+        if let Some(guild) = guild {
+            log::send_msg(
+                format!("Left guild:`{}`, id `{}`", guild.name, guild.id),
+                &self.cfg.logging.webhook_url,
+            );
+        } else {
+            log::send_msg(
+                format!("Left guild id `{}`", event.id),
+                &self.cfg.logging.webhook_url,
+            );
+        }
     }
 
     async fn message_delete(

@@ -76,7 +76,7 @@ where
             .field("Level", format!("`{}`", metadata.level()), true)
             .field("Name", format!("`{}`", metadata.name()), false)
             .field("Target", format!("`{}`", metadata.target()), true)
-            .color(colour_from_level(*metadata.level()));
+            .colour(colour_from_level(*metadata.level()));
 
         if let Some(path) = metadata.module_path() {
             embed = embed.field("Path", format!("`{path}`"), true);
@@ -147,5 +147,22 @@ fn colour_from_level(level: Level) -> u32 {
         Level::INFO => 0x98c379,
         Level::DEBUG => 0x61afef,
         _ => 0x979eab,
+    }
+}
+
+/// Sends a message to the "logging" channel
+pub fn send_msg(msg: String, url: &str) {
+    let embed = CreateEmbed::new().description(msg);
+    let embed_json = match ureq::serde_json::to_value(embed) {
+        Ok(s) => s,
+        Err(e) => panic!("Error constructing message: {e}"),
+    };
+
+    if let Err(e) = ureq::post(url).send_json(WebhookMessage {
+        content: None,
+        attachments: Vec::new(),
+        embeds: vec![embed_json],
+    }) {
+        panic!("Error sending message to webhook: {e}");
     }
 }
