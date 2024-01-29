@@ -49,5 +49,6 @@ generate_construct!(
     InfoCommand,
     EditCommand,
     RemoveCommand,
-    LinkCommand
+    LinkCommand,
+    RoleCommand
 );

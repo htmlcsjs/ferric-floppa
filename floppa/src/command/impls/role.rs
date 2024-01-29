@@ -28,16 +28,31 @@ impl ExtendedCommand for RoleCommand {
             .split_whitespace();
         let Some(user) = args.next() else {
             return Ok(FlopMessagable::Text(format!(
-                "Usage: `{} (user) (role)`",
+                "Usage: `{0} (user) (role)` or `{0} (user) -r (role)` to remove role",
                 ctx.command
             )));
         };
-        let Some(role) = args.next() else {
+        let Some(mut role) = args.next() else {
             return Ok(FlopMessagable::Text(format!(
-                "Usage: `{} (user) (role)`",
+                "Usage: `{0} (user) (role)` or `{0} (user) -r (role)` to remove role",
                 ctx.command
             )));
         };
+
+        let mut rm_mode = role == "-r";
+        if rm_mode {
+            role = match args.next() {
+                None => {
+                    return Ok(FlopMessagable::Text(format!(
+                        "Usage: `{0} (user) (role)` or `{0} (user) -r (role)` to remove role",
+                        ctx.command
+                    )))
+                }
+                Some(r) => r,
+            };
+        } else if args.next().map(|x| x == "-r").unwrap_or_default() {
+            rm_mode = true;
+        }
 
         let Some(user) = stuff::try_get_user(user) else {
             return Ok(FlopMessagable::Text(
@@ -57,8 +72,11 @@ impl ExtendedCommand for RoleCommand {
         if !db_lock.user_has_role(msg.author.id, &FlopRole::Admin) {
             return Ok(FlopMessagable::Text(":clueless:".to_string()));
         }
-
-        db_lock.give_role(user, role);
+        if !rm_mode {
+            db_lock.give_role(user, role);
+        } else {
+            db_lock.remove_role(user, role)
+        }
 
         drop(db_lock);
 

@@ -12,3 +12,4 @@ pub use info::InfoCommand;
 pub use link::LinkCommand;
 pub use msg::MessageCommand;
 pub use remove::RemoveCommand;
+pub use role::RoleCommand;

@@ -467,7 +467,25 @@ impl FlopDB {
             roles.push(role);
         }
     }
+
+    /// Remove a role from a user
+    pub fn remove_role(&mut self, user: UserId, role: FlopRole) {
+        let Some(inner) = self.user_roles.get_mut(&user) else {
+            return;
+        };
+
+        let roles = &mut inner.0;
+        inner.1 = SyncState::Dirty;
+
+        // Check if the user is banned, if so they dont get a role
+        roles.retain(|x| x != &role);
+
+        if roles.is_empty() {
+            inner.1 = SyncState::Deleted;
+        }
+    }
 }
+
 #[derive(Debug, Default)]
 /// The result from [`canonicalise_command`]
 pub struct CanonicalsedResult {
