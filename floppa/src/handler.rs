@@ -104,6 +104,8 @@ impl FlopHandler {
                             )
                             .await;
                     }
+                } else {
+                    return None;
                 }
             }
             CanonicalisedStatus::Recursive => {
@@ -154,6 +156,7 @@ impl FlopHandler {
         drop(data_lock);
 
         // Execute the command
+        let _typing = ctx.http.start_typing(msg.channel_id);
         let cmd_ctx = CmdCtx {
             ctx,
             command: &(self.cfg.prefix.clone() + &canonicalised.call),
