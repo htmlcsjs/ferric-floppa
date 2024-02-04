@@ -50,5 +50,6 @@ generate_construct!(
     EditCommand,
     RemoveCommand,
     LinkCommand,
-    RoleCommand
+    RoleCommand,
+    VersionCommand
 );

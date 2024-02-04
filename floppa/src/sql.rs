@@ -436,9 +436,11 @@ impl FlopDB {
                 return false;
             }
             let mut role_found = roles.contains(role);
+            let mut role = role.clone();
             while !role_found {
                 let parent = role.get_parent();
-                if let Some(role) = parent {
+                if let Some(parent) = parent {
+                    role = parent;
                     role_found = roles.contains(&role)
                 } else {
                     return role_found;
