@@ -5,6 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serenity::{
+    all::GuildId,
     futures::TryStreamExt,
     model::{id::UserId, Timestamp},
 };
@@ -13,7 +14,7 @@ use sqlx::{
     FromRow, Pool, Sqlite,
 };
 use tokio::{sync::Mutex, time::Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     command::{self, ExtendedCommand},
@@ -21,6 +22,8 @@ use crate::{
 };
 
 const COMMAND_SEARCH_DEPTH_LIMIT: usize = 64;
+/// The name of the default root registry
+pub const ROOT_REGISTRY: &str = "root";
 
 #[derive(Debug)]
 pub struct FlopDB {
@@ -36,6 +39,8 @@ pub struct FlopDB {
     removed_commands: Vec<i64>,
     /// List of users with roles
     user_roles: HashMap<UserId, (Vec<FlopRole>, SyncState)>,
+    /// List of guilds and their root registry
+    guilds: HashMap<GuildId, String>,
 }
 
 impl FlopDB {
@@ -119,6 +124,19 @@ impl FlopDB {
             user_roles.insert(UserId::from(user.id as u64), (roles, SyncState::Clean));
         }
 
+        let mut guilds = HashMap::new();
+        let guild_data = sqlx::query!(
+            "SELECT guilds.id, registries.name as root FROM guilds, registries 
+             WHERE guilds.root_registry = registries.id;"
+        )
+        .fetch_all(&pool)
+        .await?;
+        for guild in guild_data {
+            if guild.root != ROOT_REGISTRY {
+                guilds.insert((guild.id as u64).into(), guild.root);
+            }
+        }
+
         Ok(Self {
             pool,
             commands,
@@ -129,6 +147,7 @@ impl FlopDB {
             removed_commands: Vec::new(),
             dirty_commands: HashSet::new(),
             user_roles,
+            guilds,
         })
     }
 
@@ -263,6 +282,7 @@ impl FlopDB {
         }
 
         // Sync roles
+        // TODO: think about putting this in a seperate place
         for (user, state) in roles {
             match state {
                 SyncState::Dirty => {
@@ -410,9 +430,8 @@ impl FlopDB {
                 result.stack.push(new_val);
                 result.status = CanonicalisedStatus::Recursive;
                 return result;
-            } else {
-                result.stack.push(new_val);
             }
+            result.stack.push(new_val);
         }
         result.status = CanonicalisedStatus::Overflow;
         result
@@ -485,6 +504,13 @@ impl FlopDB {
         if roles.is_empty() {
             inner.1 = SyncState::Deleted;
         }
+    }
+
+    pub fn get_root_registry(&self, guild: GuildId) -> &str {
+        self.guilds
+            .get(&guild)
+            .map(String::as_str)
+            .unwrap_or(ROOT_REGISTRY)
     }
 }
 

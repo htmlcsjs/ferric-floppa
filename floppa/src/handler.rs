@@ -13,7 +13,6 @@ use tracing::{debug, error, info};
 
 const FALLBACK_EMOTE: &str = "⚠";
 const RESPONSE_CACHE_SIZE: usize = 512;
-const ROOT_REGISTRY: &str = "root";
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -72,8 +71,9 @@ impl FlopHandler {
 
         // Find the actual command object and obtain a lock for it
         let data_lock = self.data.read().await;
+        let registry = data_lock.get_root_registry(msg.guild_id.unwrap_or_default());
         let canonicalised = data_lock
-            .canonicalise_command(ROOT_REGISTRY.to_owned(), name.to_owned())
+            .canonicalise_command(registry.to_owned(), name.to_owned())
             .await;
 
         // Deal with the output of the canonicalisation

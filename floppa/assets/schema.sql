@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS commands(
     FOREIGN KEY(registry) REFERENCES registries(id)
 );
 CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY,
+    id    INTEGER PRIMARY KEY,
     roles BLOB NULL --msgpack array of roles
+);
+CREATE TABLE IF NOT EXISTS guilds(
+  id INTEGER PRIMARY KEY,
+  root_registry INTEGER,
+  FOREIGN KEY(root_registry) REFERENCES registries(id)
 );
