@@ -1,18 +1,32 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{
+        atomic::{AtomicI32, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use crate::{
     command::{CmdCtx, FlopMessagable},
     config::Config,
     log,
     sql::{CanonicalisedStatus, CmdNode, FlopDB},
-    Cli,
+    Cli, FlopError, FlopResult,
 };
 use serenity::{async_trait, http::Http, model::prelude::*, prelude::*};
-use tokio::time;
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+    time,
+};
 use tracing::{debug, error, info};
 
 const FALLBACK_EMOTE: &str = "⚠";
 const RESPONSE_CACHE_SIZE: usize = 512;
+/// The count of emoji reactions this bot has done
+pub static REACTION_COUNT: AtomicI32 = AtomicI32::new(0);
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -45,6 +59,10 @@ impl FlopHandler {
             text: fomat_reaction_string(&cfg.emoji.phrase),
         };
 
+        if let Err(e) = Self::init_emoji(&cli).await {
+            error!("Error initalising the reaction counter: `{e}`")
+        }
+
         let data = Arc::new(RwLock::new(match FlopDB::init(&cli).await {
             Ok(i) => i,
             Err(e) => panic!("Error connstructing database: `{e:?}`"),
@@ -57,6 +75,24 @@ impl FlopHandler {
             data,
             response_cache: RwLock::new(HashMap::with_capacity(RESPONSE_CACHE_SIZE)),
         }
+    }
+
+    async fn init_emoji(cli: &Cli) -> FlopResult<()> {
+        let path = cli.get_path("reaction_count");
+
+        if !path.is_file() && path.exists() {
+            let msg = format!("{} is not a file!", path.display());
+            return Err(FlopError::InvalidPath(msg).into());
+        }
+
+        if !path.exists() {
+            REACTION_COUNT.store(0, Ordering::Relaxed);
+            File::create(path).await?.write_i32(0).await?;
+        } else {
+            let mut count_file = File::open(path).await?;
+            REACTION_COUNT.store(count_file.read_i32().await?, Ordering::Relaxed);
+        }
+        Ok(())
     }
 
     // Returns the message id of the old response to the message, if there is one
@@ -223,7 +259,11 @@ impl EventHandler for FlopHandler {
         if fomat_reaction_string(&msg.content).contains(&self.emoji.text) {
             let result = msg.react(&ctx.http, self.emoji.emoji.clone()).await;
             if let Err(e) = result {
-                error!("Error reacting to `{}`:`{e}`", msg.link())
+                if e.to_string() != "Missing Permissions" {
+                    error!("Error reacting to `{}`:`{e:?}`", msg.link())
+                }
+            } else {
+                REACTION_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
         // Handle potental command calls
@@ -259,7 +299,11 @@ impl EventHandler for FlopHandler {
         if fomat_reaction_string(&msg.content).contains(&self.emoji.text) {
             let result = msg.react(&ctx.http, self.emoji.emoji.clone()).await;
             if let Err(e) = result {
-                error!("Error reacting to `{}````rust\n{e}```", msg.link())
+                if e.to_string() != "Missing Permissions" {
+                    error!("Error reacting to `{}`:`{e:?}`", msg.link())
+                }
+            } else {
+                REACTION_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
         // Handle potental command calls
@@ -325,17 +369,18 @@ fn fomat_reaction_string(text: &str) -> String {
 }
 
 /// Function to sync db consistantly
-pub async fn db_sync_loop(duration: u64, data: Arc<RwLock<FlopDB>>) {
+pub async fn db_sync_loop(duration: u64, data: Arc<RwLock<FlopDB>>, cli: Cli) {
     let mut interval = time::interval(Duration::from_secs(duration));
+    let emote_path = cli.get_path("reaction_count");
     debug!("Started save loop");
     loop {
         interval.tick().await;
 
-        db_sync(data.clone()).await;
+        db_sync(data.clone(), &emote_path).await;
     }
 }
 
-pub async fn db_sync(data: Arc<RwLock<FlopDB>>) {
+pub async fn db_sync(data: Arc<RwLock<FlopDB>>, reaction_path: impl AsRef<Path>) {
     // Get and drain the dirty commands
     let mut lock = data.write().await;
     let dirty = lock.drain_dirty();
@@ -348,5 +393,21 @@ pub async fn db_sync(data: Arc<RwLock<FlopDB>>) {
     let lock = data.read().await;
     if let Err(e) = lock.sync(dirty, removed, roles).await {
         error!("Error syncing to disk```rust\n{e}```");
+    }
+
+    // Sync REACTION_COUNT
+    let mut reaction_file = match File::create(reaction_path).await {
+        Err(e) => {
+            error!("Error opening file to sync reaction counts: `{e}`");
+            return;
+        }
+        Ok(f) => f,
+    };
+
+    if let Err(e) = reaction_file
+        .write_i32(REACTION_COUNT.load(Ordering::Relaxed))
+        .await
+    {
+        error!("error writing reaction count to disk: `{e}`")
     }
 }

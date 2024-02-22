@@ -51,5 +51,6 @@ generate_construct!(
     RemoveCommand,
     LinkCommand,
     RoleCommand,
-    VersionCommand
+    VersionCommand,
+    FlopCountCommand
 );

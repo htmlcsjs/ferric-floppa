@@ -14,7 +14,7 @@ use sqlx::{
     FromRow, Pool, Sqlite,
 };
 use tokio::{sync::Mutex, time::Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     command::{self, ExtendedCommand},

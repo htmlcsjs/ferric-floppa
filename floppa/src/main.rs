@@ -6,6 +6,7 @@ mod sql;
 mod stuff;
 
 use std::{
+    fmt::Display,
     path::{Path, PathBuf},
     process,
 };
@@ -55,7 +56,7 @@ async fn main() {
 
     cache_settings.max_messages = cfg.msg_cache;
 
-    let handler = FlopHandler::new(cfg.clone(), cli).await;
+    let handler = FlopHandler::new(cfg.clone(), cli.clone()).await;
     let db = handler.get_db();
 
     let mut client = Client::builder(&token, intents)
@@ -65,15 +66,20 @@ async fn main() {
         .expect("Error building Client");
 
     // Spawn task to consistantly sync db
-    let a = tokio::spawn(handler::db_sync_loop(cfg.save_duration, db.clone()));
+    let a = tokio::spawn(handler::db_sync_loop(
+        cfg.save_duration,
+        db.clone(),
+        cli.clone(),
+    ));
 
     // Spawn the main task
     let moved_db = db.clone();
+    let moved_cli = cli.clone();
     let b = tokio::spawn(async move {
         if let Err(e) = client.start().await {
             error!("Fatal error running client```rust\n{e}```")
         }
-        handler::db_sync(moved_db).await;
+        handler::db_sync(moved_db, moved_cli.get_path("reaction_count")).await;
     });
 
     // Set the ctrl+c handler
@@ -81,7 +87,7 @@ async fn main() {
     let abort = vec![a.abort_handle(), b.abort_handle()];
     ctrlc::set_handler(move || {
         warn!("terminating floppa");
-        handle.block_on(handler::db_sync(db.clone()));
+        handle.block_on(handler::db_sync(db.clone(), cli.get_path("reaction_count")));
         let _enter = handle.enter();
         for handle in &abort {
             handle.abort();
@@ -129,3 +135,19 @@ impl Cli {
         self.run_dir.join(path)
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FlopError {
+    InvalidPath(String),
+}
+
+impl Display for FlopError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPath(msg) => write!(f, "invalid path: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for FlopError {}
