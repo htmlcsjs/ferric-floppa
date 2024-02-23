@@ -52,5 +52,6 @@ generate_construct!(
     LinkCommand,
     RoleCommand,
     VersionCommand,
-    FlopCountCommand
+    FlopCountCommand,
+    WikiCommand
 );

@@ -7,6 +7,7 @@ mod msg;
 mod remove;
 mod role;
 mod version;
+mod wiki;
 
 pub use add::AddCommand;
 pub use edit::EditCommand;
@@ -17,3 +18,4 @@ pub use msg::MessageCommand;
 pub use remove::RemoveCommand;
 pub use role::RoleCommand;
 pub use version::VersionCommand;
+pub use wiki::WikiCommand;
