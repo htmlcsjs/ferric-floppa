@@ -53,5 +53,6 @@ generate_construct!(
     RoleCommand,
     VersionCommand,
     FlopCountCommand,
-    WikiCommand
+    WikiCommand,
+    StoikCommand
 );

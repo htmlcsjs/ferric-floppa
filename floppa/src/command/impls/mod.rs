@@ -6,6 +6,7 @@ mod link;
 mod msg;
 mod remove;
 mod role;
+mod stoik;
 mod version;
 mod wiki;
 
@@ -17,5 +18,6 @@ pub use link::LinkCommand;
 pub use msg::MessageCommand;
 pub use remove::RemoveCommand;
 pub use role::RoleCommand;
+pub use stoik::StoikCommand;
 pub use version::VersionCommand;
 pub use wiki::WikiCommand;
